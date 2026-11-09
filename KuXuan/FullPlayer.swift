@@ -17,20 +17,25 @@ struct FullPlayer: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                // 纯色径向渐变背景：以圆形封面为中心向外扩散，完全不透明（不露底层）
-                let center = coverRect == .zero
-                    ? UnitPoint(x: 0.5, y: 0.30)
-                    : UnitPoint(x: min(max(coverRect.midX / geo.size.width, 0.05), 0.95),
-                                y: min(max(coverRect.midY / geo.size.height, 0.05), 0.95))
-                RadialGradient(
-                    stops: [
-                        .init(color: Color(uiColor: player.coverColor).opacity(0.95), location: 0.0),
-                        .init(color: Color(uiColor: player.coverColor).opacity(0.55), location: 0.4),
-                        .init(color: Color.black, location: 1.0)
-                    ],
-                    center: center,
-                    startRadius: 0,
-                    endRadius: geo.size.width * 0.95
+                // 1) 兜底纯黑：彻底杜绝下层页面透出（修复"看得到下一次的页面"）
+                Color.black.ignoresSafeArea()
+                // 2) 专辑封面放大 + 强模糊，作为「围着专辑图扩散」的雾化底
+                //    对齐 Web .p-backdrop: filter blur(70px) saturate(1.6) brightness(.6)
+                AsyncImage(url: APIClient.coverURL(song?.cover)) { phase in
+                    if case .success(let img) = phase {
+                        img.resizable().scaledToFill()
+                    } else { Color.clear }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .scaleEffect(1.3)
+                .blur(radius: 60)
+                .saturation(1.5)
+                .brightness(-0.3)
+                .ignoresSafeArea()
+                // 3) 暗化遮罩：保证白色文字/歌词可读，且整体不透明
+                LinearGradient(
+                    colors: [.black.opacity(0.35), .black.opacity(0.62)],
+                    startPoint: .top, endPoint: .bottom
                 )
                 .ignoresSafeArea()
 
