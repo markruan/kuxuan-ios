@@ -181,16 +181,29 @@ def wait_run(token, full_name, timeout=2400):
             print("   请先到 GitHub 网页手动创建该文件（内容见对话），再运行一次本脚本即可自动编译+下载。")
             return None, "need_workflow"
         raise
+    # 锁定本次 dispatch 产生的最新 run（run id 单调递增，取最大值，避免误锁旧 run）
     started = time.time()
     target = None
+    while time.time() - started < 90 and target is None:
+        try:
+            runs = req("GET", "/repos/%s/actions/runs?event=workflow_dispatch&per_page=10" % full_name,
+                       token).get("workflow_runs", [])
+            if runs:
+                target = max(r["id"] for r in runs)
+        except APIError:
+            pass
+        if target is None:
+            time.sleep(5)
+    if target is None:
+        return None, "timeout"
+    print("    锁定 run %s" % target)
     last = ""
     while time.time() - started < timeout:
         try:
-            runs = req("GET", "/repos/%s/actions/runs?event=workflow_dispatch&per_page=5" % full_name,
+            runs = req("GET", "/repos/%s/actions/runs?event=workflow_dispatch&per_page=20" % full_name,
                        token).get("workflow_runs", [])
-            if runs:
-                r = runs[0]
-                target = r["id"]
+            r = next((x for x in runs if x["id"] == target), None)
+            if r:
                 state = "%s / %s" % (r["status"], r.get("conclusion") or "-")
                 if state != last:
                     print("    %s  (run %s)" % (state, target))
@@ -276,12 +289,25 @@ def main():
     run_id, conclusion = wait_run(token, full_name)
     if conclusion == "need_workflow":
         return 1
+
+    # 即便结论非 success，也先探测 artifact：旧版 workflow 因 tee 误报 failure，
+    # 但 IPA 实际已产出（artifact 有效），照常下载即可。
+    ipa = None
     if conclusion != "success":
-        print("\n❌ 编译未成功：%s" % conclusion)
-        if run_id:
-            fetch_logs(token, full_name, run_id)
-            print("\n把上面失败步骤或日志贴给我，我来改工程后重跑。")
-        return 1
+        print("\n⚠️ 云端结论为：%s（非 success）" % conclusion)
+        try:
+            arts = req("GET", "/repos/%s/actions/runs/%s/artifacts" % (full_name, run_id),
+                       token).get("artifacts", [])
+            has_ipa = any(a["name"] == ARTIFACT and not a.get("expired") for a in arts)
+        except APIError:
+            has_ipa = False
+        if has_ipa:
+            print("   但检测到有效 IPA 产物，仍尝试下载（疑似 workflow 误报失败）。")
+        else:
+            if run_id:
+                fetch_logs(token, full_name, run_id)
+                print("\n把上面失败步骤或日志贴给我，我来改工程后重跑。")
+            return 1
 
     try:
         ipa = download_ipa(token, full_name, run_id)
