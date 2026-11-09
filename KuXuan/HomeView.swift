@@ -41,7 +41,14 @@ struct HomeView: View {
             }
             .padding(.bottom, 90)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(
+            Color(.systemGroupedBackground)
+                .overlay(alignment: .top) {
+                    LinearGradient(colors: [Color.kxBrand1.opacity(0.20), .clear],
+                                   startPoint: .top, endPoint: .bottom)
+                        .frame(height: 220)
+                }
+        )
         .ignoresSafeArea(edges: .top)
         .navigationBarHidden(true)
         .task { await load() }
@@ -56,14 +63,14 @@ struct HomeView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("KuXuan").font(.title.bold())
+                Text("KuXuan").font(.title.bold()).foregroundStyle(LinearGradient.kx)
                 Text(home?.statusText ?? "云音乐 · 在线音源")
                     .font(.caption).foregroundColor(.secondary)
             }
             Spacer()
             Button { showSettings = true } label: {
                 Image(systemName: "gearshape.fill")
-                    .font(.title3).foregroundColor(.primary)
+                    .font(.title3).foregroundColor(.kxAccent)
                     .padding(8).background(Color(.secondarySystemFill)).clipShape(Circle())
             }
         }
@@ -79,6 +86,7 @@ struct HomeView: View {
                 KXCover(url: APIClient.coverURL(b.img))
                     .frame(height: 150)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .shadow(color: Color.black.opacity(0.10), radius: 8, y: 3)
                     .tag(i)
             }
         }
@@ -105,6 +113,7 @@ struct HomeView: View {
                             .frame(maxWidth: .infinity)
                             .clipped()
                             .cornerRadius(10)
+                            .shadow(color: Color.black.opacity(0.08), radius: 6, y: 2)
                         Text(pl.name).font(.caption).lineLimit(1).foregroundColor(.primary)
                     }
                 }
@@ -131,7 +140,7 @@ struct HomeView: View {
                         Spacer()
                         Image(systemName: "chevron.right").foregroundColor(.secondary)
                     }
-                    .padding(10).background(Color(.secondarySystemGroupedBackground)).cornerRadius(12)
+                    .padding(10).kxCard(radius: 12, shadowRadius: 8)
                 }
             }
         }
@@ -156,7 +165,7 @@ struct HomeView: View {
                         }
                         Spacer()
                     }
-                    .padding(8).background(Color(.secondarySystemGroupedBackground)).cornerRadius(10)
+                    .padding(8).kxCard(radius: 10, shadowRadius: 6)
                 }
                 .foregroundColor(.primary)
             }
@@ -174,6 +183,7 @@ struct HomeView: View {
             Text(errorMsg ?? "加载失败").font(.subheadline).foregroundColor(.secondary)
             Button("重试") { Task { await load() } }
                 .buttonStyle(.borderedProminent)
+                .tint(.kxAccent)
         }
         .frame(maxWidth: .infinity).padding(.top, 80)
     }
