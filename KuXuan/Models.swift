@@ -129,7 +129,7 @@ struct PlaylistDetailResp {
     }
 }
 
-struct LyricLine: Identifiable {
+struct LyricLine: Identifiable, Equatable {
     let id = UUID()
     let time: Double
     let text: String
