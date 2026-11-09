@@ -15,6 +15,7 @@ struct SettingsView: View {
                         .autocapitalization(.none)
                         .autocorrectionDisabled()
                     Button("保存并测试连接") { Task { await test() } }
+                        .tint(.kxAccent)
                         .disabled(urlText.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 Section("连接状态") {
