@@ -30,8 +30,14 @@ struct MiniPlayer: View {
             .frame(width: 36, height: 36)
         }
         .padding(10)
-        .background(Color(.secondarySystemBackground))
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(alignment: .top) {
+            LinearGradient.kx.frame(height: 2).cornerRadius(2)
+        }
         .cornerRadius(14)
-        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
     }
 }
