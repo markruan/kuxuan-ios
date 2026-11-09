@@ -48,7 +48,7 @@ struct PlaylistView: View {
                                 .font(.subheadline.bold())
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 16).padding(.vertical, 8)
-                                .background(Color.pink).cornerRadius(20)
+                                .background(LinearGradient.kx).cornerRadius(20)
                         }
                     }
                 }
@@ -82,12 +82,12 @@ struct PlaylistView: View {
                 player.toggleFav(s)
             } label: {
                 Image(systemName: player.isFav(s.id) ? "heart.fill" : "heart")
-                    .foregroundColor(player.isFav(s.id) ? .pink : .secondary)
+                    .foregroundColor(player.isFav(s.id) ? .kxAccent : .secondary)
             }
             .padding(.trailing, 8)
         }
         .padding(8).background(
-            player.current?.id == s.id ? Color.pink.opacity(0.12) : Color.clear
+            player.current?.id == s.id ? Color.kxAccent.opacity(0.12) : Color.clear
         ).cornerRadius(10)
         .contentShape(Rectangle())
         .onTapGesture { player.playSongs(detail?.songs ?? [], index: i) }
@@ -98,7 +98,7 @@ struct PlaylistView: View {
             Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundColor(.orange)
             Text(msg).font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
                 .padding(.horizontal, 30)
-            Button("重试") { Task { await load() } }.buttonStyle(.borderedProminent)
+            Button("重试") { Task { await load() } }.buttonStyle(.borderedProminent).tint(.kxAccent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
