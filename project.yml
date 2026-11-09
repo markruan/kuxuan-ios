@@ -1,0 +1,51 @@
+# XcodeGen 配置：CI 里执行 `xcodegen generate` 生成 KuXuan.xcodeproj
+# 纯 SwiftUI 工程（无 WKWebView、无 Web 资源）。本机无 Xcode，编译在 GitHub Actions 完成。
+name: KuXuan
+
+options:
+  bundleIdPrefix: com.markruan
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+targets:
+  KuXuan:
+    type: application
+    platform: iOS
+    sources:
+      - path: KuXuan/App.swift
+      - path: KuXuan/Models.swift
+      - path: KuXuan/API.swift
+      - path: KuXuan/ImageColor.swift
+      - path: KuXuan/PlayerEngine.swift
+      - path: KuXuan/HomeView.swift
+      - path: KuXuan/PlaylistView.swift
+      - path: KuXuan/FullPlayer.swift
+      - path: KuXuan/QueueSheet.swift
+      - path: KuXuan/MiniPlayer.swift
+      - path: KuXuan/SettingsView.swift
+    info:
+      properties:
+        CFBundleDisplayName: KuXuan
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen:
+          UIColorName: ""
+        UIBackgroundModes:
+          - audio
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UIViewControllerBasedStatusBarAppearance: false
+        ITSAppUsesNonExemptEncryption: false
+        # server.py 是 http（局域网 Mac），iOS 默认禁止明文流量，这里放开
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.markruan.kuxuan
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_PREVIEWS: NO
