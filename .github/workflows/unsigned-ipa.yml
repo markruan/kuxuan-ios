@@ -1,0 +1,68 @@
+# 产出未签名 IPA：给 Sideloadly / SideStore 侧载用。
+# 公开仓库的 macOS runner 免费且不限时长；私有仓库按 10 倍系数扣分钟数，建议用公开仓库。
+name: Build unsigned IPA
+
+# 只保留手动触发：上传脚本用 contents API 逐文件提交会产生多次 commit，
+# 若挂 push 触发会重复跑 N 次 CI。由一键脚本上传完毕后精确 dispatch 一次。
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    # macos-26 是 GA 镜像；如要严格对齐 iOS 27 SDK，可把标签改为 xcode-27（公共预览）
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Inspect toolchain
+        run: |
+          sw_vers
+          uname -m
+          xcodebuild -version
+          xcodebuild -showsdks | head -20
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml
+
+      - name: Verify project
+        run: xcodebuild -list -project KuXuan.xcodeproj
+
+      - name: Archive without signing
+        run: |
+          xcodebuild archive \
+            -project KuXuan.xcodeproj \
+            -scheme KuXuan \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$PWD/build/KuXuan.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            EXPANDED_CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            DEVELOPMENT_TEAM="" \
+            | tail -40
+
+      - name: Pack unsigned IPA
+        run: |
+          APP="$PWD/build/KuXuan.xcarchive/Products/Applications/KuXuan.app"
+          test -d "$APP" || { echo "::error::未找到编译产物 KuXuan.app"; exit 1; }
+          mkdir -p "$PWD/build/Payload"
+          cp -R "$APP" "$PWD/build/Payload/"
+          cd "$PWD/build"
+          zip -qry KuXuan-unsigned.ipa Payload
+          ls -lh KuXuan-unsigned.ipa
+          unzip -l KuXuan-unsigned.ipa | head -12
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KuXuan-unsigned-IPA
+          path: build/KuXuan-unsigned.ipa
+          retention-days: 30
+          if-no-files-found: error
