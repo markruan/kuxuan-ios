@@ -12,7 +12,7 @@ struct QueueSheet: View {
                     Text("播放列表").font(.headline)
                     Spacer()
                     Button("完成") { player.showQueue = false }
-                        .foregroundColor(.pink)
+                        .foregroundColor(.kxAccent)
                 }
                 .padding(16)
 
@@ -35,10 +35,10 @@ struct QueueSheet: View {
                                         Spacer()
                                         if i == player.currentIndex {
                                             Image(systemName: "speaker.wave.2.fill")
-                                                .foregroundColor(.pink)
+                                                .foregroundColor(.kxAccent)
                                         }
                                     }
-                                    .foregroundColor(i == player.currentIndex ? .pink : .primary)
+                                    .foregroundColor(i == player.currentIndex ? .kxAccent : .primary)
                                     .padding(10)
                                 }
                             }
