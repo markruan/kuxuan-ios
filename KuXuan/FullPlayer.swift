@@ -79,6 +79,7 @@ struct FullPlayer: View {
     }
 
     // MARK: 圆形旋转封面
+    @ViewBuilder
     private var coverStage: some View {
         let coverURL = APIClient.coverURL(song?.cover)
         ZStack {
