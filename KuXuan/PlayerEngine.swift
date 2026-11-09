@@ -50,10 +50,44 @@ final class PlayerEngine: ObservableObject {
 
     func setup() {
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
+            let s = AVAudioSession.sharedInstance()
+            try s.setCategory(.playback, mode: .default,
+                              options: [.allowBluetooth, .defaultToSpeaker])
+            try s.setActive(true, options: .notifyOthersOnDeactivation)
         } catch { }
         setupRemote()
+        setupSessionObservers()
+    }
+
+    // 后台/锁屏保活：系统音频被打断或路由变化后，自动恢复会话并续播
+    private func setupSessionObservers() {
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let self else { return }
+            let type = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            if type == AVAudioSession.InterruptionType.ended.rawValue {
+                try? AVAudioSession.sharedInstance().setActive(true)
+                if self.isPlaying { self.player.play() }
+            }
+        }
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let self else { return }
+            let reason = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+            // 输出设备断开（如拔出耳机）：暂停，避免无声续播
+            if reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue {
+                self.player.pause(); self.isPlaying = false
+            }
+        }
+        NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemPlaybackStalled, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self, self.isPlaying else { return }
+            // 局域网流缓冲卡顿：立即重试续播
+            self.player.play()
+        }
     }
 
     // MARK: - 播放控制
@@ -66,6 +100,7 @@ final class PlayerEngine: ObservableObject {
 
     func playCurrent() {
         guard let s = current, let url = APIClient.streamURL(s.file) else { return }
+        try? AVAudioSession.sharedInstance().setActive(true)
         let item = AVPlayerItem(url: url)
         player.replaceCurrentItem(with: item)
         player.play()
