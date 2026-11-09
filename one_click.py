@@ -93,19 +93,21 @@ def upload(token, owner, full_name, src):
         if rel.startswith(".github/workflows/"):
             print("  ⏭️ 跳过 %s（API 禁止写入 .github/workflows，请到 GitHub 网页手动创建）" % rel)
             continue
+        # URL 中的路径需做 percent-encoding（文件名可能含中文/空格）
+        rel_q = urllib.parse.quote(rel, safe="/")
         with open(full, "rb") as f:
             content = base64.b64encode(f.read()).decode()
         # 若文件已存在则取 sha 以便覆盖（支持重复上传）
         sha = None
         try:
-            r = req("GET", "/repos/%s/contents/%s" % (full_name, rel), token)
+            r = req("GET", "/repos/%s/contents/%s" % (full_name, rel_q), token)
             sha = r.get("sha")
         except APIError:
             pass
         body = {"message": "add " + rel, "content": content}
         if sha:
             body["sha"] = sha
-        req("PUT", "/repos/%s/contents/%s" % (full_name, rel), token, body)
+        req("PUT", "/repos/%s/contents/%s" % (full_name, rel_q), token, body)
         n += 1
         print("  ↑ %s" % rel)
     print("  ✅ 上传完成（推送 %d 个文件；.github/workflows/* 需你手动在网页创建）" % n)
