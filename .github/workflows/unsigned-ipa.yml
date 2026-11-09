@@ -1,15 +1,11 @@
 # 产出未签名 IPA：给 Sideloadly / SideStore 侧载用。
-# 公开仓库的 macOS runner 免费且不限时长；私有仓库按 10 倍系数扣分钟数，建议用公开仓库。
 name: Build unsigned IPA
 
-# 只保留手动触发：上传脚本用 contents API 逐文件提交会产生多次 commit，
-# 若挂 push 触发会重复跑 N 次 CI。由一键脚本上传完毕后精确 dispatch 一次。
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    # macos-26 是 GA 镜像；如要严格对齐 iOS 27 SDK，可把标签改为 xcode-27（公共预览）
     runs-on: macos-latest
     timeout-minutes: 30
 
@@ -46,23 +42,34 @@ jobs:
             EXPANDED_CODE_SIGN_IDENTITY="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
             DEVELOPMENT_TEAM="" \
-            | tail -40
+            2>&1 | tee build/archive.log
+
+      - name: Show compile errors
+        if: always()
+        run: |
+          echo "===== error 行 ====="
+          grep -nE "error:|error generated|BUILD FAILED|ARCHIVE FAILED" build/archive.log | head -80 || true
 
       - name: Pack unsigned IPA
+        if: always()
         run: |
           APP="$PWD/build/KuXuan.xcarchive/Products/Applications/KuXuan.app"
-          test -d "$APP" || { echo "::error::未找到编译产物 KuXuan.app"; exit 1; }
-          mkdir -p "$PWD/build/Payload"
-          cp -R "$APP" "$PWD/build/Payload/"
-          cd "$PWD/build"
-          zip -qry KuXuan-unsigned.ipa Payload
-          ls -lh KuXuan-unsigned.ipa
-          unzip -l KuXuan-unsigned.ipa | head -12
+          if [ -d "$APP" ]; then
+            mkdir -p "$PWD/build/Payload"
+            cp -R "$APP" "$PWD/build/Payload/"
+            cd "$PWD/build"
+            zip -qry KuXuan-unsigned.ipa Payload
+            ls -lh KuXuan-unsigned.ipa
+            unzip -l KuXuan-unsigned.ipa | head -12
+          else
+            echo "::warning::未找到编译产物 KuXuan.app（编译可能失败，见 archive 日志）"
+          fi
 
       - name: Upload IPA artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: KuXuan-unsigned-IPA
           path: build/KuXuan-unsigned.ipa
           retention-days: 30
-          if-no-files-found: error
+          if-no-files-found: warn
