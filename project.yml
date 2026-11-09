@@ -14,6 +14,7 @@ targets:
     platform: iOS
     sources:
       - path: KuXuan/App.swift
+      - path: KuXuan/Theme.swift
       - path: KuXuan/Models.swift
       - path: KuXuan/API.swift
       - path: KuXuan/ImageColor.swift
@@ -25,7 +26,8 @@ targets:
       - path: KuXuan/MiniPlayer.swift
       - path: KuXuan/SettingsView.swift
     info:
-      path: KuXuan/Info.plist
+      # 不引用外部文件，由 xcodegen 直接根据 properties 生成 Info.plist
+      # （避免 KuXuan/Info.plist 缺失导致 xcodegen generate 失败）
       properties:
         CFBundleDisplayName: KuXuan
         CFBundleShortVersionString: "1.0"
