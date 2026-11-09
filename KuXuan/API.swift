@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 enum KXError: Error { case message(String) }
 
