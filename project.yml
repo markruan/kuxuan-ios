@@ -25,6 +25,7 @@ targets:
       - path: KuXuan/MiniPlayer.swift
       - path: KuXuan/SettingsView.swift
     info:
+      path: KuXuan/Info.plist
       properties:
         CFBundleDisplayName: KuXuan
         CFBundleShortVersionString: "1.0"
