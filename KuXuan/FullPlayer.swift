@@ -1,67 +1,55 @@
 import SwiftUI
 
-private struct CoverRectKey: PreferenceKey {
-    static var defaultValue: CGRect = .zero
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
-}
-
 struct FullPlayer: View {
     @EnvironmentObject var player: PlayerEngine
     @State private var angle: Double = 0
-    @State private var coverRect: CGRect = .zero
-    @State private var dragY: CGFloat = 0
     @State private var lyricIndex: Int = -1
 
     private var song: Song? { player.current }
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                // 1) 兜底纯黑：彻底杜绝下层页面透出（修复"看得到下一次的页面"）
-                Color.black.ignoresSafeArea()
-                // 2) 专辑封面放大 + 强模糊，作为「围着专辑图扩散」的雾化底
-                //    对齐 Web .p-backdrop: filter blur(70px) saturate(1.6) brightness(.6)
-                AsyncImage(url: APIClient.coverURL(song?.cover)) { phase in
-                    if case .success(let img) = phase {
-                        img.resizable().scaledToFill()
-                    } else { Color.clear }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .scaleEffect(1.3)
-                .blur(radius: 60)
-                .saturation(1.5)
-                .brightness(-0.3)
-                .ignoresSafeArea()
-                // 3) 暗化遮罩：保证白色文字/歌词可读，且整体不透明
-                LinearGradient(
-                    colors: [.black.opacity(0.35), .black.opacity(0.62)],
-                    startPoint: .top, endPoint: .bottom
-                )
-                .ignoresSafeArea()
-
-                VStack(spacing: 0) {
-                    topBar
-                    Spacer().frame(height: 8)
-                    coverStage
-                    lyricBox
-                    Spacer()
-                    controlRow
-                    functionRow
-                    Spacer().frame(height: 8)
-                }
-                .foregroundColor(.white)
-                .padding(.bottom, geo.safeAreaInsets.bottom)
-                .padding(.top, geo.safeAreaInsets.top)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ZStack {
+            // 1) 兜底纯黑：彻底杜绝下层页面透出
+            Color.black.ignoresSafeArea()
+            // 2) 专辑封面放大 + 强模糊，作为「围着专辑图扩散」的雾化底
+            //    对齐 Web .p-backdrop: filter blur(70px) saturate(1.6) brightness(.6)
+            AsyncImage(url: APIClient.coverURL(song?.cover)) { phase in
+                if case .success(let img) = phase {
+                    img.resizable().scaledToFill()
+                } else { Color.clear }
             }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .coordinateSpace(name: "player")
-                .onPreferenceChange(CoverRectKey.self) { rect in coverRect = rect }
-                .overlay(alignment: .bottom) {
-                    if player.showQueue { QueueSheet().transition(.move(edge: .bottom)) }
-                }
-                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: player.showQueue)
+            .scaleEffect(1.3)
+            .blur(radius: 60)
+            .saturation(1.5)
+            .brightness(-0.3)
+            .ignoresSafeArea()
+            // 3) 暗化遮罩：保证白色文字/歌词可读，且整体不透明
+            LinearGradient(
+                colors: [.black.opacity(0.35), .black.opacity(0.62)],
+                startPoint: .top, endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            // 4) 前景内容：强制铺满，弹性 Spacer 把控制行推到底部
+            VStack(spacing: 0) {
+                topBar
+                coverStage
+                lyricBox
+                controlRow
+                functionRow
+                Spacer(minLength: 0)
+            }
+            .foregroundColor(.white)
+            .padding(.top, 54)
+            .padding(.bottom, 34)
+            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .ignoresSafeArea()
+        .overlay(alignment: .bottom) {
+            if player.showQueue { QueueSheet().transition(.move(edge: .bottom)) }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: player.showQueue)
         .onReceive(Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()) { _ in
             if player.isPlaying { angle += 0.9 }   // 约 18 秒一圈
         }
@@ -81,7 +69,7 @@ struct FullPlayer: View {
             Spacer()
             VStack(spacing: 2) {
                 Text("正在播放").font(.subheadline)
-                Text(song?.artist ?? "—").font(.caption).opacity(0.7)
+                Text(song?.title ?? "—").font(.caption).opacity(0.7)
             }
             Spacer()
             // 占位保持对称
@@ -91,7 +79,6 @@ struct FullPlayer: View {
     }
 
     // MARK: 圆形旋转封面
-    @ViewBuilder
     private var coverStage: some View {
         let coverURL = APIClient.coverURL(song?.cover)
         ZStack {
@@ -106,37 +93,28 @@ struct FullPlayer: View {
                         .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 4))
                 default:
                     Color.white.opacity(0.12).clipShape(Circle())
+                        .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 4))
                 }
             }
             .frame(width: 250, height: 250)
             .rotationEffect(.degrees(angle))
-            .background(
-                GeometryReader { g in
-                    Color.clear.preference(key: CoverRectKey.self, value: g.frame(in: .named("player")))
-                }
-            )
             // 边缘磨砂透明光晕
-            .overlay(
-                Circle().stroke(Color.white.opacity(0.18), lineWidth: 1)
-                    .frame(width: 268, height: 268)
-            )
+            Circle()
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                .frame(width: 268, height: 268)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
+        .padding(.vertical, 16)
         .gesture(
             DragGesture(minimumDistance: 20)
-                .onChanged { v in dragY = v.translation.height }
                 .onEnded { v in
-                    let dy = v.translation.height
-                    if dy < -90 { player.next() }
-                    else if dy > 90 { player.prevSong() }
-                    dragY = 0
+                    if v.translation.height < -90 { player.next() }
+                    else if v.translation.height > 90 { player.prev() }
                 }
         )
     }
 
     // MARK: 歌词
-    @ViewBuilder
     private var lyricBox: some View {
         ScrollViewReader { proxy in
             ScrollView {
