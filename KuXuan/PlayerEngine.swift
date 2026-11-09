@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import MediaPlayer
 import Combine
+import SwiftUI
 
 /// 播放引擎：包装 AVPlayer，负责播放控制、后台/锁屏、主色提取、歌词、收藏与历史。
 /// 不标记 @MainActor：App 初始化时创建实例会触发「main-actor 隔离」编译错误。
