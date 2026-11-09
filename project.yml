@@ -26,24 +26,7 @@ targets:
       - path: KuXuan/MiniPlayer.swift
       - path: KuXuan/SettingsView.swift
     info:
-      # 不引用外部文件，由 xcodegen 直接根据 properties 生成 Info.plist
-      # （避免 KuXuan/Info.plist 缺失导致 xcodegen generate 失败）
-      properties:
-        CFBundleDisplayName: KuXuan
-        CFBundleShortVersionString: "1.0"
-        CFBundleVersion: "1"
-        UILaunchScreen:
-          UIColorName: ""
-        UIBackgroundModes:
-          - audio
-        UIFileSharingEnabled: true
-        LSSupportsOpeningDocumentsInPlace: true
-        UIStatusBarStyle: UIStatusBarStyleLightContent
-        UIViewControllerBasedStatusBarAppearance: false
-        ITSAppUsesNonExemptEncryption: false
-        # server.py 是 http（局域网 Mac），iOS 默认禁止明文流量，这里放开
-        NSAppTransportSecurity:
-          NSAllowsArbitraryLoads: true
+      path: KuXuan/Info.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.markruan.kuxuan
