@@ -52,7 +52,9 @@ struct FullPlayer: View {
                 .foregroundColor(.white)
                 .padding(.bottom, geo.safeAreaInsets.bottom)
                 .padding(.top, geo.safeAreaInsets.top)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .coordinateSpace(name: "player")
                 .onPreferenceChange(CoverRectKey.self) { rect in coverRect = rect }
                 .overlay(alignment: .bottom) {
