@@ -28,6 +28,7 @@ struct HomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
+                searchBar
                 if let h = home {
                     if !h.banners.isEmpty { bannerPager(h.banners) }
                     if !h.playlists.isEmpty { recommendSection(h.playlists) }
@@ -53,10 +54,26 @@ struct HomeView: View {
         .navigationBarHidden(true)
         .task { await load() }
         .refreshable { await load() }
-        .searchable(text: $searchText, prompt: "搜索歌曲或歌手")
-        .onSubmit(of: .search) { Task { await doSearch() } }
         .sheet(isPresented: $showSearch) { SearchResults(results: searchResults) }
         .sheet(isPresented: $showSettings) { SettingsView().environmentObject(player) }
+    }
+
+    // MARK: 搜索栏（自定义，避免 .searchable 在隐藏导航栏下错位渲染到屏幕底部）
+    private var searchBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundColor(.secondary)
+            TextField("搜索歌曲或歌手", text: $searchText)
+                .submitLabel(.search)
+                .onSubmit { Task { await doSearch() } }
+            if !searchText.isEmpty {
+                Button { searchText = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding(10)
+        .kxCard(radius: 12, shadowRadius: 6)
+        .padding(.horizontal, 16)
     }
 
     // MARK: 顶部
