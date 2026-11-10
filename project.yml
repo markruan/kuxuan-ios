@@ -19,6 +19,9 @@ targets:
       - path: KuXuan/API.swift
       - path: KuXuan/ImageColor.swift
       - path: KuXuan/PlayerEngine.swift
+      - path: KuXuan/AuthStore.swift
+      - path: KuXuan/AccountViews.swift
+      - path: KuXuan/CommentView.swift
       - path: KuXuan/HomeView.swift
       - path: KuXuan/PlaylistView.swift
       - path: KuXuan/FullPlayer.swift
