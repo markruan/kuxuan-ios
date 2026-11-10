@@ -47,6 +47,7 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         ITSAppUsesNonExemptEncryption: false
+        NSPhotoLibraryAddUsageDescription: 保存网易云登录二维码到相册，便于用网易云 App 从相册扫码登录
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         # 关键：没有 Launch Screen 声明时 iOS 会退回 320x480 兼容模式，
