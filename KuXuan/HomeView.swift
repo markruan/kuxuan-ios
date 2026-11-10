@@ -20,7 +20,7 @@ struct HomeView: View {
     @State private var errorMsg: String?
     @State private var bannerIndex = 0
     @State private var searchText = ""
-    @State private var searchResults: [Song] = []
+    @State private var searchQuery = ""
     @State private var showSearch = false
     @State private var showSettings = false
 
@@ -49,22 +49,31 @@ struct HomeView: View {
                                    startPoint: .top, endPoint: .bottom)
                         .frame(height: 220)
                 }
+                .ignoresSafeArea()
         )
-        .ignoresSafeArea(edges: .top)
+        // 不能对 ScrollView 加 ignoresSafeArea(edges: .top)：
+        // 会让「KuXuan」标题和设置齿轮顶进状态栏。背景单独延伸即可。
         .navigationBarHidden(true)
         .task { await load() }
         .refreshable { await load() }
-        .sheet(isPresented: $showSearch) { SearchResults(results: searchResults) }
+        .sheet(isPresented: $showSearch) {
+            SearchSheet(initialQuery: searchQuery) { songs, idx in
+                player.playSongs(songs, index: idx)
+                showSearch = false
+            }
+        }
         .sheet(isPresented: $showSettings) { SettingsView().environmentObject(player) }
     }
 
     // MARK: 搜索栏（自定义，避免 .searchable 在隐藏导航栏下错位渲染到屏幕底部）
     private var searchBar: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundColor(.secondary)
+            Button { openSearch() } label: {
+                Image(systemName: "magnifyingglass").foregroundColor(.secondary)
+            }
             TextField("搜索歌曲或歌手", text: $searchText)
                 .submitLabel(.search)
-                .onSubmit { Task { await doSearch() } }
+                .onSubmit { openSearch() }
             if !searchText.isEmpty {
                 Button { searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
@@ -212,35 +221,123 @@ struct HomeView: View {
         catch { errorMsg = "无法连接服务器（\(APIClient.baseURL)）\n请确认 Mac 上 server.py 已启动、手机与 Mac 同一 Wi-Fi" }
         loading = false
     }
-    private func doSearch() async {
-        guard !searchText.isEmpty else { return }
-        do { searchResults = try await APIClient.search(q: searchText) }
-        catch { searchResults = [] }
+    // 只负责把关键词交给搜索页，网络请求与状态展示全部在 SearchSheet 内完成，
+    // 避免请求失败时拿到空数组、弹出一个没有任何提示的白屏。
+    private func openSearch() {
+        searchQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         showSearch = true
     }
 }
 
-// 搜索结果
-struct SearchResults: View {
-    @EnvironmentObject var player: PlayerEngine
-    let results: [Song]
+// MARK: - 搜索页
+// 注意：.sheet 呈现的视图不会自动继承父视图的 @EnvironmentObject，
+// 所以这里不声明 @EnvironmentObject，改用 onPlay 闭包回调，避免白屏/崩溃。
+struct SearchSheet: View {
     @Environment(\.dismiss) var dismiss
+    let initialQuery: String
+    let onPlay: ([Song], Int) -> Void
+
+    @State private var query = ""
+    @State private var results: [Song] = []
+    @State private var loading = false
+    @State private var searched = false
+    @State private var lastQuery = ""
+    @State private var err: String?
+
     var body: some View {
         NavigationStack {
-            List(results) { s in
-                Button {
-                    player.playSongs(results, index: results.firstIndex(of: s) ?? 0)
-                    dismiss()
-                } label: {
-                    VStack(alignment: .leading) {
-                        Text(s.title).font(.subheadline)
-                        Text(s.artist).font(.caption).foregroundColor(.secondary)
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundColor(.secondary)
+                    TextField("搜索歌曲或歌手", text: $query)
+                        .submitLabel(.search)
+                        .onSubmit { Task { await runSearch() } }
+                    if !query.isEmpty {
+                        Button { query = "" } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
+                        }
                     }
+                    Button("搜索") { Task { await runSearch() } }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.kxAccent)
+                }
+                .padding(10)
+                .background(Color(.secondarySystemGroupedBackground))
+                Divider()
+                content
+            }
+            .navigationTitle("搜索")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("关闭") { dismiss() }
                 }
             }
-            .navigationTitle("搜索结果")
-            .toolbar { Button("关闭") { dismiss() } }
-            .listStyle(.insetGrouped)
+            .task {
+                query = initialQuery
+                if !query.isEmpty { await runSearch() }
+            }
         }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if loading {
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("搜索中…").font(.caption).foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let e = err {
+            VStack(spacing: 12) {
+                Image(systemName: "wifi.exclamationmark").font(.largeTitle).foregroundColor(.secondary)
+                Text(e).font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
+                Button("重试") { Task { await runSearch() } }
+                    .buttonStyle(.borderedProminent).tint(.kxAccent)
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if results.isEmpty {
+            VStack(spacing: 12) {
+                Image(systemName: "magnifyingglass").font(.largeTitle).foregroundColor(.secondary)
+                Text(searched ? "没有找到「\(lastQuery)」相关歌曲" : "输入歌曲名或歌手，点「搜索」")
+                    .font(.subheadline).foregroundColor(.secondary)
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            List(Array(results.enumerated()), id: \.element.id) { i, s in
+                Button { onPlay(results, i) } label: {
+                    HStack(spacing: 12) {
+                        KXCover(url: APIClient.coverURL(s.cover))
+                            .frame(width: 44, height: 44).cornerRadius(6)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(s.title).font(.subheadline).lineLimit(1)
+                            Text(s.artist).font(.caption).foregroundColor(.secondary).lineLimit(1)
+                        }
+                        Spacer()
+                    }
+                }
+                .foregroundColor(.primary)
+            }
+            .listStyle(.plain)
+        }
+    }
+
+    private func runSearch() async {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return }
+        lastQuery = q
+        loading = true
+        err = nil
+        do {
+            results = try await APIClient.search(q: q)
+            searched = true
+        } catch {
+            results = []
+            searched = true
+            err = "搜索失败：\(error.localizedDescription)\n请确认 Mac 上 server.py 已启动、手机与 Mac 处于同一 Wi‑Fi"
+        }
+        loading = false
     }
 }
