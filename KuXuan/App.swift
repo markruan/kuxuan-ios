@@ -3,11 +3,16 @@ import SwiftUI
 @main
 struct KuXuanApp: App {
     @StateObject private var player = PlayerEngine()
+    @StateObject private var auth = AuthStore()
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(player)
-                .onAppear { player.setup() }
+                .environmentObject(auth)
+                .onAppear {
+                    player.setup()
+                    Task { await auth.refresh() }
+                }
         }
     }
 }
