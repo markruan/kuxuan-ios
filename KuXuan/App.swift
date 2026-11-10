@@ -28,7 +28,6 @@ struct RootView: View {
                         PlaylistView(ref: ref)
                     }
             }
-            .ignoresSafeArea(edges: .top)
 
             VStack {
                 Spacer()
