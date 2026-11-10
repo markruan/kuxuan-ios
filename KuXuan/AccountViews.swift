@@ -442,6 +442,7 @@ struct NCMQRView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var auth: AuthStore
     @State private var polling = true
+    @State private var saved = false
 
     var body: some View {
         NavigationStack {
@@ -485,6 +486,22 @@ struct NCMQRView: View {
                         Label("刷新二维码", systemImage: "arrow.clockwise")
                     }
                     .buttonStyle(.bordered)
+
+                    if let qr = auth.qrImage {
+                        Button {
+                            UIImageWriteToSavedPhotosAlbum(qr, nil, nil, nil)
+                            saved = true
+                        } label: {
+                            Label(saved ? "已保存到相册" : "保存二维码到相册",
+                                  systemImage: saved ? "checkmark" : "square.and.arrow.down")
+                        }
+                        .buttonStyle(.bordered)
+                        .font(.footnote)
+                        Text("只有一台手机时：保存后打开网易云 App → 扫一扫 → 从相册选取二维码，即可完成登录；回到本页会自动显示成功。")
+                            .font(.caption2).foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 28)
+                    }
                 }
                 Spacer()
             }
