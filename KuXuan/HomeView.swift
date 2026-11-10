@@ -1,6 +1,8 @@
 import SwiftUI
 
 // 封面图通用组件（多页面复用）
+// 关键：scaledToFill 的图片必须被 .clipped() 约束，否则会按原图像素撑开父视图，
+// 在 LazyVGrid 中把行高顶坏，导致第二行图片与第一行重叠。
 struct KXCover: View {
     let url: URL?
     var body: some View {
@@ -10,11 +12,13 @@ struct KXCover: View {
             default: Color(.systemFill)
             }
         }
+        .clipped()
     }
 }
 
 struct HomeView: View {
     @EnvironmentObject var player: PlayerEngine
+    @EnvironmentObject var auth: AuthStore
     @State private var home: HomeResp?
     @State private var loading = false
     @State private var errorMsg: String?
@@ -23,6 +27,7 @@ struct HomeView: View {
     @State private var searchQuery = ""
     @State private var showSearch = false
     @State private var showSettings = false
+    @State private var showAccount = false
 
     var body: some View {
         ScrollView {
@@ -30,10 +35,12 @@ struct HomeView: View {
                 header
                 searchBar
                 if let h = home {
+                    if !h.hot.isEmpty { hotWords(h.hot) }
                     if !h.banners.isEmpty { bannerPager(h.banners) }
                     if !h.playlists.isEmpty { recommendSection(h.playlists) }
                     if !h.charts.isEmpty { chartSection(h.charts) }
                     if !h.newsongs.isEmpty { newSongSection(h.newsongs) }
+                    statusFooter(h)
                 } else if loading {
                     ProgressView("加载中…").frame(maxWidth: .infinity, alignment: .center).padding(.top, 80)
                 } else if errorMsg != nil {
@@ -45,14 +52,14 @@ struct HomeView: View {
         .background(
             Color(.systemGroupedBackground)
                 .overlay(alignment: .top) {
-                    LinearGradient(colors: [Color.kxBrand1.opacity(0.20), .clear],
+                    LinearGradient(colors: [Color.kxBrand1.opacity(0.22),
+                                            Color.kxBrand2.opacity(0.08), .clear],
                                    startPoint: .top, endPoint: .bottom)
-                        .frame(height: 220)
+                        .frame(height: 280)
                 }
                 .ignoresSafeArea()
         )
-        // 不能对 ScrollView 加 ignoresSafeArea(edges: .top)：
-        // 会让「KuXuan」标题和设置齿轮顶进状态栏。背景单独延伸即可。
+        // 不对 ScrollView 加 ignoresSafeArea(edges:.top)：会把标题顶进状态栏。
         .navigationBarHidden(true)
         .task { await load() }
         .refreshable { await load() }
@@ -62,10 +69,59 @@ struct HomeView: View {
                 showSearch = false
             }
         }
-        .sheet(isPresented: $showSettings) { SettingsView().environmentObject(player) }
+        .sheet(isPresented: $showSettings) {
+            SettingsView().environmentObject(player).environmentObject(auth)
+        }
+        .sheet(isPresented: $showAccount) {
+            AccountCenterView()
+                .environmentObject(player)
+                .environmentObject(auth)
+        }
     }
 
-    // MARK: 搜索栏（自定义，避免 .searchable 在隐藏导航栏下错位渲染到屏幕底部）
+    // MARK: 顶部
+    private var header: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Button { showAccount = true } label: {
+                ZStack {
+                    Circle().fill(LinearGradient.kx)
+                    if let a = auth.ncmProfile?.avatar, !a.isEmpty {
+                        AsyncImage(url: APIClient.proxiedPicURL(a)) { phase in
+                            if case .success(let im) = phase {
+                                im.resizable().scaledToFill().clipShape(Circle())
+                            }
+                        }
+                    } else {
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 17)).foregroundColor(.white)
+                    }
+                }
+                .frame(width: 38, height: 38)
+                .overlay(Circle().stroke(Color.white.opacity(0.7), lineWidth: 1.5))
+                .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text("KuXuan").font(.title2.bold()).foregroundStyle(LinearGradient.kx)
+                Text(home?.statusText ?? "云音乐 · 在线音源")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+            Spacer()
+            Button { showAccount = true } label: {
+                Image(systemName: "person.crop.circle")
+                    .font(.title3).foregroundColor(.kxAccent)
+                    .padding(8).background(Color(.secondarySystemFill)).clipShape(Circle())
+            }
+            Button { showSettings = true } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.title3).foregroundColor(.kxAccent)
+                    .padding(8).background(Color(.secondarySystemFill)).clipShape(Circle())
+            }
+        }
+        .padding(.top, 8)
+        .padding(.horizontal, 16)
+    }
+
+    // MARK: 搜索栏
     private var searchBar: some View {
         HStack(spacing: 8) {
             Button { openSearch() } label: {
@@ -85,62 +141,101 @@ struct HomeView: View {
         .padding(.horizontal, 16)
     }
 
-    // MARK: 顶部
-    private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("KuXuan").font(.title.bold()).foregroundStyle(LinearGradient.kx)
-                Text(home?.statusText ?? "云音乐 · 在线音源")
-                    .font(.caption).foregroundColor(.secondary)
-            }
-            Spacer()
-            Button { showSettings = true } label: {
-                Image(systemName: "gearshape.fill")
-                    .font(.title3).foregroundColor(.kxAccent)
-                    .padding(8).background(Color(.secondarySystemFill)).clipShape(Circle())
+    // MARK: 热搜词（后端 home.hot，之前完全没用起来）
+    private func hotWords(_ words: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("热门搜索").font(.caption.bold()).foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(words.enumerated()), id: \.offset) { i, w in
+                        Button {
+                            searchText = w
+                            openSearch()
+                        } label: {
+                            HStack(spacing: 4) {
+                                if i < 3 {
+                                    Text("\(i + 1)").font(.caption2.bold())
+                                        .foregroundColor(.kxAccent)
+                                }
+                                Text(w).font(.caption).lineLimit(1)
+                            }
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(Color(.secondarySystemGroupedBackground))
+                            .clipShape(Capsule())
+                        }
+                        .foregroundColor(.primary)
+                    }
+                }
+                .padding(.horizontal, 16)
             }
         }
-        .padding(.top, 8)
-        .padding(.horizontal, 16)
     }
 
-    // MARK: Banner（自动轮播 + 顶部留白）
+    // MARK: Banner
     @ViewBuilder
     private func bannerPager(_ banners: [Banner]) -> some View {
         TabView(selection: $bannerIndex) {
             ForEach(Array(banners.enumerated()), id: \.offset) { i, b in
-                KXCover(url: APIClient.coverURL(b.img))
-                    .frame(height: 150)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .shadow(color: Color.black.opacity(0.10), radius: 8, y: 3)
-                    .tag(i)
+                ZStack(alignment: .bottomLeading) {
+                    KXCover(url: APIClient.coverURL(b.img))
+                    LinearGradient(colors: [.clear, .black.opacity(0.55)],
+                                   startPoint: .center, endPoint: .bottom)
+                    Text(b.title).font(.caption.bold()).foregroundColor(.white)
+                        .lineLimit(1).padding(10)
+                }
+                .frame(height: 150)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .shadow(color: Color.black.opacity(0.12), radius: 10, y: 4)
+                .tag(i)
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .always))
         .frame(height: 150)
         .padding(.horizontal, 16)
-        .padding(.top, 12)                  // 与顶部标题留白
-        .onReceive(Timer.publish(every: 3, on: .main, in: .common).autoconnect()) { _ in
+        .onReceive(Timer.publish(every: 4, on: .main, in: .common).autoconnect()) { _ in
             guard banners.count > 1 else { return }
             withAnimation { bannerIndex = (bannerIndex + 1) % banners.count }
         }
     }
 
-    // MARK: 推荐歌单（正方形网格）
+    // MARK: 推荐歌单
+    // 修复第二行重叠：用「无 intrinsic size 的 Color + aspectRatio(1,.fit)」先钉死
+    // 单元格高度 = 列宽，再把封面放进 overlay 并 clipped。原写法让 scaledToFill
+    // 的图片自己决定高度，行高被撑大后图片溢出到下一行。
     @ViewBuilder
     private func recommendSection(_ playlists: [Playlist]) -> some View {
-        sectionTitle("推荐歌单")
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 14) {
+        sectionTitle("推荐歌单", subtitle: "\(playlists.count) 个精选")
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 16) {
             ForEach(playlists) { pl in
                 NavigationLink(value: PlaylistRef(id: pl.id, name: pl.name, cover: pl.cover)) {
                     VStack(alignment: .leading, spacing: 6) {
-                        KXCover(url: APIClient.coverURL(pl.cover))
-                            .aspectRatio(1, contentMode: .fill)
-                            .frame(maxWidth: .infinity)
-                            .clipped()
-                            .cornerRadius(10)
-                            .shadow(color: Color.black.opacity(0.08), radius: 6, y: 2)
-                        Text(pl.name).font(.caption).lineLimit(1).foregroundColor(.primary)
+                        ZStack {
+                            Color(.systemFill)
+                            KXCover(url: APIClient.coverURL(pl.cover))
+                        }
+                        .aspectRatio(1, contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .overlay(alignment: .bottomTrailing) {
+                            if pl.playCount > 0 {
+                                HStack(spacing: 2) {
+                                    Image(systemName: "play.fill").font(.system(size: 7))
+                                    Text(pl.playCountText).font(.system(size: 9))
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 5).padding(.vertical, 3)
+                                .background(Color.black.opacity(0.55))
+                                .clipShape(Capsule())
+                                .padding(5)
+                            }
+                        }
+                        Text(pl.name).font(.caption).lineLimit(2)
+                            .foregroundColor(.primary)
+                            .frame(height: 30, alignment: .top)
+                        if !pl.description.isEmpty {
+                            Text(pl.description).font(.system(size: 9))
+                                .foregroundColor(.secondary).lineLimit(1)
+                        }
                     }
                 }
             }
@@ -151,14 +246,26 @@ struct HomeView: View {
     // MARK: 榜单
     @ViewBuilder
     private func chartSection(_ charts: [Chart]) -> some View {
-        sectionTitle("排行榜")
+        sectionTitle("排行榜", subtitle: "实时更新")
         VStack(spacing: 10) {
-            ForEach(charts) { c in
+            ForEach(Array(charts.enumerated()), id: \.element.id) { i, c in
                 NavigationLink(value: PlaylistRef(id: c.id, name: c.name, cover: c.cover)) {
                     HStack(spacing: 12) {
-                        KXCover(url: APIClient.coverURL(c.cover))
-                            .frame(width: 56, height: 56).cornerRadius(8)
-                        VStack(alignment: .leading, spacing: 3) {
+                        ZStack {
+                            Color(.systemFill)
+                            KXCover(url: APIClient.coverURL(c.cover))
+                        }
+                        .frame(width: 56, height: 56)
+                        .clipShape(RoundedRectangle(cornerRadius: 9))
+                        .overlay(alignment: .bottomLeading) {
+                            Text("\(i + 1)").font(.caption2.bold())
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 5).padding(.vertical, 2)
+                                .background(Color.kxAccent.opacity(0.9))
+                                .clipShape(Capsule())
+                                .padding(3)
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
                             Text(c.name).font(.subheadline.bold())
                             Text(c.tracks.prefix(3).map { $0.title }.joined(separator: " / "))
                                 .font(.caption).foregroundColor(.secondary).lineLimit(1)
@@ -176,20 +283,28 @@ struct HomeView: View {
     // MARK: 新歌
     @ViewBuilder
     private func newSongSection(_ songs: [Song]) -> some View {
-        sectionTitle("新歌速递")
+        sectionTitle("新歌速递", subtitle: "\(songs.count) 首")
         VStack(spacing: 8) {
             ForEach(Array(songs.enumerated()), id: \.element.id) { i, s in
                 Button {
                     player.playSongs(songs, index: i)
                 } label: {
                     HStack(spacing: 12) {
-                        KXCover(url: APIClient.coverURL(s.cover))
-                            .frame(width: 46, height: 46).cornerRadius(8)
+                        Text(String(format: "%02d", i + 1))
+                            .font(.caption2.bold()).foregroundColor(.kxAccent)
+                            .frame(width: 22)
+                        ZStack {
+                            Color(.systemFill)
+                            KXCover(url: APIClient.coverURL(s.cover))
+                        }
+                        .frame(width: 46, height: 46)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                         VStack(alignment: .leading, spacing: 3) {
                             Text(s.title).font(.subheadline).lineLimit(1)
                             Text(s.artist).font(.caption).foregroundColor(.secondary).lineLimit(1)
                         }
                         Spacer()
+                        Image(systemName: "play.circle").foregroundColor(.kxAccent.opacity(0.7))
                     }
                     .padding(8).kxCard(radius: 10, shadowRadius: 6)
                 }
@@ -199,14 +314,33 @@ struct HomeView: View {
         .padding(.horizontal, 16)
     }
 
-    private func sectionTitle(_ t: String) -> some View {
-        Text(t).font(.headline).padding(.horizontal, 16)
+    private func statusFooter(_ h: HomeResp) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(h.online ? Color.green : Color.orange).frame(width: 6, height: 6)
+            Text("音源状态：\(h.statusText)")
+            Spacer()
+            Text("\(h.playlists.count) 歌单 · \(h.newsongs.count) 新歌")
+        }
+        .font(.caption2).foregroundColor(.secondary)
+        .padding(.horizontal, 20).padding(.top, 4)
+    }
+
+    private func sectionTitle(_ t: String, subtitle: String = "") -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(t).font(.headline)
+            if !subtitle.isEmpty {
+                Text(subtitle).font(.caption2).foregroundColor(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 16)
     }
 
     private var errorView: some View {
         VStack(spacing: 12) {
             Image(systemName: "wifi.exclamationmark").font(.largeTitle)
             Text(errorMsg ?? "加载失败").font(.subheadline).foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
             Button("重试") { Task { await load() } }
                 .buttonStyle(.borderedProminent)
                 .tint(.kxAccent)
@@ -221,8 +355,7 @@ struct HomeView: View {
         catch { errorMsg = "无法连接服务器（\(APIClient.baseURL)）\n请确认 Mac 上 server.py 已启动、手机与 Mac 同一 Wi-Fi" }
         loading = false
     }
-    // 只负责把关键词交给搜索页，网络请求与状态展示全部在 SearchSheet 内完成，
-    // 避免请求失败时拿到空数组、弹出一个没有任何提示的白屏。
+
     private func openSearch() {
         searchQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         showSearch = true
@@ -230,8 +363,7 @@ struct HomeView: View {
 }
 
 // MARK: - 搜索页
-// 注意：.sheet 呈现的视图不会自动继承父视图的 @EnvironmentObject，
-// 所以这里不声明 @EnvironmentObject，改用 onPlay 闭包回调，避免白屏/崩溃。
+// .sheet 不自动继承 @EnvironmentObject，所以这里不用环境对象，改用闭包回调。
 struct SearchSheet: View {
     @Environment(\.dismiss) var dismiss
     let initialQuery: String
@@ -309,8 +441,12 @@ struct SearchSheet: View {
             List(Array(results.enumerated()), id: \.element.id) { i, s in
                 Button { onPlay(results, i) } label: {
                     HStack(spacing: 12) {
-                        KXCover(url: APIClient.coverURL(s.cover))
-                            .frame(width: 44, height: 44).cornerRadius(6)
+                        ZStack {
+                            Color(.systemFill)
+                            KXCover(url: APIClient.coverURL(s.cover))
+                        }
+                        .frame(width: 44, height: 44)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
                         VStack(alignment: .leading, spacing: 3) {
                             Text(s.title).font(.subheadline).lineLimit(1)
                             Text(s.artist).font(.caption).foregroundColor(.secondary).lineLimit(1)
@@ -336,7 +472,7 @@ struct SearchSheet: View {
         } catch {
             results = []
             searched = true
-            err = "搜索失败：\(error.localizedDescription)\n请确认 Mac 上 server.py 已启动、手机与 Mac 处于同一 Wi‑Fi"
+            err = "搜索失败：\(error.localizedDescription)\n请确认 Mac 上 server.py 已启动、手机与 Mac 处于同一 Wi-Fi"
         }
         loading = false
     }
