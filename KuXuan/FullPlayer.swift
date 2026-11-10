@@ -4,54 +4,72 @@ struct FullPlayer: View {
     @EnvironmentObject var player: PlayerEngine
     @State private var angle: Double = 0
     @State private var lyricIndex: Int = -1
+    @State private var showMore = false
+    @State private var sliderValue: Double = 0
+    @State private var seeking = false
 
     private var song: Song? { player.current }
 
     var body: some View {
-        ZStack {
-            // 1) 兜底纯黑：彻底杜绝下层页面透出
-            Color.black.ignoresSafeArea()
-            // 2) 专辑封面放大 + 强模糊，作为「围着专辑图扩散」的雾化底
-            //    对齐 Web .p-backdrop: filter blur(70px) saturate(1.6) brightness(.6)
-            AsyncImage(url: APIClient.coverURL(song?.cover)) { phase in
-                if case .success(let img) = phase {
-                    img.resizable().scaledToFill()
-                } else { Color.clear }
-            }
-            .scaleEffect(1.3)
-            .blur(radius: 60)
-            .saturation(1.5)
-            .brightness(-0.3)
-            .ignoresSafeArea()
-            // 3) 暗化遮罩：保证白色文字/歌词可读，且整体不透明
-            LinearGradient(
-                colors: [.black.opacity(0.35), .black.opacity(0.62)],
-                startPoint: .top, endPoint: .bottom
-            )
-            .ignoresSafeArea()
+        // 关键：用 GeometryReader 拿到真实屏幕尺寸，把每一层都钉死在这个宽度内。
+        // 背景 AsyncImage 的 scaledToFill 若不加 frame，会按原图像素撑大 ZStack
+        // （实测撑到约 921pt，屏幕仅 393pt），导致前景坐标系整体右移、
+        // 最左的返回键与最左/最右两个功能键被裁到屏幕外。
+        GeometryReader { geo in
+            let W = geo.size.width
+            let H = geo.size.height
 
-            // 4) 前景内容：强制铺满，弹性 Spacer 把控制行推到底部
-            VStack(spacing: 0) {
-                topBar
-                coverStage
-                lyricBox
-                controlRow
-                functionRow
-                Spacer(minLength: 0)
+            ZStack(alignment: .top) {
+                Color.black
+
+                AsyncImage(url: APIClient.coverURL(song?.cover)) { phase in
+                    if case .success(let img) = phase {
+                        img.resizable().scaledToFill()
+                    } else { Color.clear }
+                }
+                .frame(width: W, height: H)
+                .scaleEffect(1.3)
+                .blur(radius: 60)
+                .saturation(1.5)
+                .brightness(-0.3)
+                .clipped()
+
+                LinearGradient(
+                    colors: [.black.opacity(0.35), .black.opacity(0.62)],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .frame(width: W, height: H)
+
+                VStack(spacing: 0) {
+                    topBar
+                    coverStage
+                    lyricBox
+                    progressBar
+                    controlRow
+                    functionRow
+                    Spacer(minLength: 0)
+                }
+                .foregroundColor(.white)
+                .padding(.top, 54)
+                .padding(.bottom, 34)
+                .padding(.horizontal, 20)
+                .frame(width: W, height: H, alignment: .top)
             }
-            .foregroundColor(.white)
-            .padding(.top, 54)
-            .padding(.bottom, 34)
-            .padding(.horizontal, 20)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(width: W, height: H)
+            .clipped()
         }
         .ignoresSafeArea()
         .overlay(alignment: .bottom) {
             if player.showQueue { QueueSheet().transition(.move(edge: .bottom)) }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: player.showQueue)
+        .confirmationDialog("歌曲信息", isPresented: $showMore, titleVisibility: .visible) {
+            Button("关闭") { }
+        } message: {
+            Text("\(song?.title ?? "—")\n\(song?.artist ?? "—")\n\(song?.album ?? "")")
+        }
         .onReceive(Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()) { _ in
-            if player.isPlaying { angle += 0.9 }   // 约 18 秒一圈
+            if player.isPlaying { angle += 0.9 }
         }
         .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
             syncLyric()
@@ -60,22 +78,27 @@ struct FullPlayer: View {
         .onChange(of: player.currentIndex) { _ in syncLyric() }
     }
 
-    // MARK: 顶部栏
+    // MARK: 顶部栏：返回键钉在最左，标题真正居中（不靠 Spacer 对称占位）
     private var topBar: some View {
-        HStack {
-            Button { player.showFullPlayer = false } label: {
-                Image(systemName: "chevron.down").font(.title3).foregroundColor(.white)
+        ZStack(alignment: .top) {
+            HStack {
+                Button { player.showFullPlayer = false } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.title3)
+                        .foregroundColor(.white)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                Spacer()
             }
-            Spacer()
             VStack(spacing: 2) {
                 Text("正在播放").font(.subheadline)
-                Text(song?.title ?? "—").font(.caption).opacity(0.7)
+                Text(song?.title ?? "—").font(.caption).opacity(0.7).lineLimit(1)
             }
-            Spacer()
-            // 占位保持对称
-            Image(systemName: "chevron.down").font(.title3).foregroundColor(.clear)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 8)
         }
-        .padding(.horizontal, 18)
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: 圆形旋转封面
@@ -99,7 +122,6 @@ struct FullPlayer: View {
             }
             .frame(width: 250, height: 250)
             .rotationEffect(.degrees(angle))
-            // 边缘磨砂透明光晕
             Circle()
                 .stroke(Color.white.opacity(0.18), lineWidth: 1)
                 .frame(width: 268, height: 268)
@@ -144,7 +166,43 @@ struct FullPlayer: View {
         }
     }
 
-    // MARK: 控制行（上一首 / 播放 / 下一首，居中对称）
+    // MARK: 进度条（可拖动，拖动期间不被播放时钟覆盖）
+    private var progressBar: some View {
+        let total = max(player.duration, 1)
+        return VStack(spacing: 4) {
+            Slider(value: $sliderValue, in: 0...total, onEditingChanged: { editing in
+                if editing {
+                    seeking = true
+                } else {
+                    player.seek(to: sliderValue)
+                    seeking = false
+                }
+            })
+            .tint(.white)
+            HStack {
+                Text(fmt(min(sliderValue, total))).font(.caption2).monospacedDigit()
+                Spacer()
+                Text(fmt(player.duration)).font(.caption2).monospacedDigit()
+            }
+            .foregroundColor(.white.opacity(0.7))
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 4)
+        .onChange(of: player.currentTime) { t in
+            if !seeking { sliderValue = t }
+        }
+        .onChange(of: player.duration) { d in
+            if !seeking { sliderValue = min(sliderValue, max(d, 1)) }
+        }
+    }
+
+    private func fmt(_ s: Double) -> String {
+        guard s.isFinite, s > 0 else { return "0:00" }
+        let i = Int(s)
+        return "\(i / 60):\(String(format: "%02d", i % 60))"
+    }
+
+    // MARK: 控制行（上一首 / 播放 / 下一首）
     private var controlRow: some View {
         HStack(spacing: 36) {
             Button { player.prev() } label: {
@@ -163,47 +221,37 @@ struct FullPlayer: View {
                 Image(systemName: "forward.fill").font(.system(size: 30)).foregroundColor(.white)
             }
         }
+        .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
     }
 
-    // MARK: 功能行（循环 / 收藏 / 更多 / 列表，等距并列）
+    // MARK: 功能行：四等分，每个按钮固定占 1/4，不依赖 Spacer 弹性
     private var functionRow: some View {
-        let modeIcon = ["repeat", "repeat.1", "shuffle"][player.playMode]
-        return HStack {
-            Button { player.cycleMode() } label: {
-                VStack(spacing: 3) {
-                    Image(systemName: modeIcon).font(.system(size: 20))
-                    Text(player.modeName).font(.system(size: 10))
-                }
-            }
-            Spacer()
-            Button {
+        let idx = min(max(player.playMode, 0), 2)
+        let modeIcon = ["repeat", "repeat.1", "shuffle"][idx]
+        let fav = song.map { player.isFav($0.id) } ?? false
+        return HStack(spacing: 0) {
+            fnButton(modeIcon, player.modeName) { player.cycleMode() }
+            fnButton(fav ? "heart.fill" : "heart", "收藏") {
                 if let s = song { player.toggleFav(s) }
-            } label: {
-                VStack(spacing: 3) {
-                    Image(systemName: (song.map { player.isFav($0.id) } ?? false) ? "heart.fill" : "heart")
-                        .font(.system(size: 20))
-                    Text("收藏").font(.system(size: 10))
-                }
             }
-            Spacer()
-            Button { /* 更多：预留 */ } label: {
-                VStack(spacing: 3) {
-                    Image(systemName: "ellipsis").font(.system(size: 20))
-                    Text("更多").font(.system(size: 10))
-                }
-            }
-            Spacer()
-            Button { player.showQueue = true } label: {
-                VStack(spacing: 3) {
-                    Image(systemName: "music.note.list").font(.system(size: 20))
-                    Text("列表").font(.system(size: 10))
-                }
-            }
+            fnButton("ellipsis", "更多") { showMore = true }
+            fnButton("music.note.list", "列表") { player.showQueue = true }
         }
         .foregroundColor(.white)
-        .padding(.horizontal, 40)
+        .frame(maxWidth: .infinity)
         .padding(.top, 6)
+    }
+
+    private func fnButton(_ icon: String, _ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: icon).font(.system(size: 20))
+                Text(title).font(.system(size: 10)).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
     }
 
     private func syncLyric() {
@@ -214,10 +262,4 @@ struct FullPlayer: View {
         }
         if idx != lyricIndex { lyricIndex = idx }
     }
-}
-
-private func fmt(_ s: Double) -> String {
-    guard s.isFinite, s > 0 else { return "0:00" }
-    let i = Int(s)
-    return "\(i / 60):\(String(format: "%02d", i % 60))"
 }
