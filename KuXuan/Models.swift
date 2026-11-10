@@ -167,3 +167,160 @@ func parseLRC(_ text: String) -> [LyricLine] {
     }
     return out.sorted { $0.time < $1.time }
 }
+
+// MARK: - 账号体系（/api/auth/*）
+struct KXUser {
+    let id: Int
+    let username: String
+    let nickname: String
+    let createdAt: Int
+    let lastLogin: Int
+    init(dict: [String: Any]) {
+        self.id = (dict["id"] as? Int) ?? 0
+        self.username = (dict["username"] as? String) ?? ""
+        self.nickname = (dict["nickname"] as? String) ?? ""
+        self.createdAt = (dict["createdAt"] as? Int) ?? 0
+        self.lastLogin = (dict["lastLogin"] as? Int) ?? 0
+    }
+    var createdText: String { Self.dateText(createdAt) }
+    var loginText: String { Self.dateText(lastLogin) }
+    private static func dateText(_ t: Int) -> String {
+        guard t > 0 else { return "—" }
+        let d = Date(timeIntervalSince1970: TimeInterval(t))
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: d)
+    }
+}
+
+struct AuthStatusResp {
+    let requireAuth: Bool
+    let allowRegister: Bool
+    let userCount: Int
+    let sessionDays: Int
+    let user: KXUser?
+    init(dict: [String: Any]) {
+        self.requireAuth = (dict["requireAuth"] as? Bool) ?? false
+        self.allowRegister = (dict["allowRegister"] as? Bool) ?? true
+        self.userCount = (dict["userCount"] as? Int) ?? 0
+        self.sessionDays = (dict["sessionDays"] as? Int) ?? 0
+        self.user = (dict["user"] as? [String: Any]).map { KXUser(dict: $0) }
+    }
+}
+
+// MARK: - 网易云账号（/api/ncm/*）
+struct NCMProfile {
+    let uid: String
+    let nickname: String
+    let avatar: String
+    let boundAt: Int
+    init(dict: [String: Any]) {
+        self.uid = String(describing: dict["uid"] ?? "")
+        self.nickname = (dict["nickname"] as? String) ?? ""
+        self.avatar = (dict["avatar"] as? String) ?? ""
+        self.boundAt = (dict["boundAt"] as? Int) ?? 0
+    }
+}
+
+struct NCMMeResp {
+    let bound: Bool
+    let profile: NCMProfile?
+    init(dict: [String: Any]) {
+        self.bound = (dict["bound"] as? Bool) ?? false
+        self.profile = (dict["profile"] as? [String: Any]).map { NCMProfile(dict: $0) }
+    }
+}
+
+struct NCMPlaylist: Identifiable {
+    let id: String
+    let name: String
+    let cover: String
+    let trackCount: Int
+    let creator: String
+    init(dict: [String: Any]) {
+        self.id = String(describing: dict["id"] ?? "")
+        self.name = (dict["name"] as? String) ?? "未命名歌单"
+        self.cover = (dict["cover"] as? String) ?? ""
+        self.trackCount = (dict["trackCount"] as? Int) ?? 0
+        self.creator = (dict["creator"] as? String) ?? ""
+    }
+}
+
+// MARK: - 歌曲评论（/api/online/comment/<id>）
+struct KXComment: Identifiable {
+    let id: String
+    let user: String
+    let avatar: String
+    let content: String
+    let time: Int64
+    let timeStr: String
+    let liked: Int
+    let quote: String
+    init(dict: [String: Any]) {
+        self.id = String(describing: dict["id"] ?? UUID().uuidString)
+        self.user = (dict["user"] as? String) ?? "匿名用户"
+        self.avatar = (dict["avatar"] as? String) ?? ""
+        self.content = (dict["content"] as? String) ?? ""
+        self.time = int64(dict["time"])
+        self.timeStr = (dict["timeStr"] as? String) ?? ""
+        self.liked = (dict["liked"] as? Int) ?? 0
+        self.quote = (dict["quote"] as? String) ?? ""
+    }
+    var likedText: String {
+        if liked >= 10000 { return String(format: "%.1f万", Double(liked) / 10000) }
+        return "\(liked)"
+    }
+    var displayTime: String {
+        if !timeStr.isEmpty { return timeStr }
+        guard time > 0 else { return "" }
+        let d = Date(timeIntervalSince1970: TimeInterval(time) / 1000)
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: d)
+    }
+}
+
+struct CommentResp {
+    let total: Int
+    let hot: [KXComment]
+    let comments: [KXComment]
+    let more: Bool
+    init(dict: [String: Any]) {
+        self.total = (dict["total"] as? Int) ?? 0
+        self.hot = (dict["hot"] as? [[String: Any]] ?? []).map { KXComment(dict: $0) }
+        self.comments = (dict["comments"] as? [[String: Any]] ?? []).map { KXComment(dict: $0) }
+        self.more = (dict["more"] as? Bool) ?? false
+    }
+}
+
+// MARK: - 可播性 / 服务状态
+struct ResolveResp {
+    let playable: Bool
+    let br: Int
+    let level: String
+    let trial: Bool
+    let reason: String
+    init(dict: [String: Any]) {
+        self.playable = (dict["playable"] as? Bool) ?? false
+        self.br = (dict["br"] as? Int) ?? 0
+        self.level = (dict["level"] as? String) ?? ""
+        self.trial = (dict["trial"] as? Bool) ?? false
+        self.reason = (dict["reason"] as? String) ?? ""
+    }
+    var qualityText: String {
+        guard playable else { return "不可播放" }
+        let kbps = br > 0 ? "\(br / 1000) kbps" : (level.isEmpty ? "标准" : level)
+        return trial ? "\(kbps) · 试听片段" : kbps
+    }
+}
+
+struct ServiceStatus {
+    let library: Int
+    let ip: String
+    let port: Int
+    let onlineApi: String
+    init(dict: [String: Any]) {
+        self.library = (dict["library"] as? Int) ?? 0
+        self.ip = (dict["ip"] as? String) ?? ""
+        self.port = (dict["port"] as? Int) ?? 0
+        self.onlineApi = (dict["onlineApi"] as? String) ?? ""
+    }
+}
