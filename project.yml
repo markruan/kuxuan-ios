@@ -27,9 +27,31 @@ targets:
       - path: KuXuan/SettingsView.swift
     info:
       path: KuXuan/Info.plist
+      # 必须显式写在这里：xcodegen generate 会用下面的内容覆写 KuXuan/Info.plist，
+      # 否则每次生成都会被重置成空壳，UIBackgroundModes / ATS 永远进不了包。
+      properties:
+        CFBundleDisplayName: KuXuan
+        LSRequiresIPhoneOS: true
+        MinimumOSVersion: "16.0"
+        UIBackgroundModes:
+          - audio
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UIViewControllerBasedStatusBarAppearance: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        ITSAppUsesNonExemptEncryption: false
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.markruan.kuxuan
+        # 关键：关闭 Xcode 自动生成 Info.plist，否则 KuXuan/Info.plist 会被完全忽略，
+        # UIBackgroundModes(audio) / NSAppTransportSecurity 不会进包，导致锁屏停播。
+        GENERATE_INFOPLIST_FILE: NO
+        PRODUCT_BUNDLE_IDENTIFIER: com.markkuxuan.kuxuan
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1,2"
         IPHONEOS_DEPLOYMENT_TARGET: "16.0"
