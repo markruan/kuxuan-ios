@@ -47,10 +47,10 @@ struct QueueSheet: View {
                         .padding(.bottom, 20)
                     }
                     .onAppear {
-                        if player.currentIndex >= 0 { proxy.scrollTo(player.currentIndex, anchor: .center) }
+                        self.scrollCurrent(proxy)
                     }
-                    .onChange(of: player.currentIndex) { idx in
-                        if idx >= 0 { withAnimation { proxy.scrollTo(idx, anchor: .center) } }
+                    .onChange(of: player.currentIndex) { _ in
+                        self.scrollCurrent(proxy)
                     }
                 }
             }
@@ -59,5 +59,13 @@ struct QueueSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: 18))
         }
         .ignoresSafeArea()
+    }
+
+    // ForEach 用的是歌曲 id（String），scrollTo 必须传同一个类型，
+    // 之前传 Int 索引，滚动实际从未生效。
+    private func scrollCurrent(_ proxy: ScrollViewProxy) {
+        let i = player.currentIndex
+        guard i >= 0, i < player.queue.count else { return }
+        withAnimation { proxy.scrollTo(player.queue[i].id, anchor: .center) }
     }
 }
