@@ -20,6 +20,7 @@ final class PlayerEngine: ObservableObject {
     @Published var coverColor: UIColor = UIColor(red: 0.20, green: 0.12, blue: 0.16, alpha: 1)
     @Published var lyrics: [LyricLine] = []
     @Published var favs: Set<String> = []
+    @Published var favSongs: [Song] = []      // 完整歌曲对象，供「我的收藏」列表展示/播放
     @Published var history: [Song] = []
 
     private let player = AVPlayer()
@@ -34,7 +35,7 @@ final class PlayerEngine: ObservableObject {
 
     // MARK: - 生命周期
     init() {
-        loadFavs(); loadHistory()
+        loadFavs(); loadFavSongs(); loadHistory()
         let iv = CMTime(seconds: 0.5, preferredTimescale: 600)
         timeToken = player.addPeriodicTimeObserver(forInterval: iv, queue: .main) { [weak self] t in
             guard let s = self else { return }
@@ -162,10 +163,29 @@ final class PlayerEngine: ObservableObject {
     func cycleMode() { playMode = (playMode + 1) % 3 }
 
     func toggleFav(_ song: Song) {
-        if favs.contains(song.id) { favs.remove(song.id) } else { favs.insert(song.id) }
+        if favs.contains(song.id) {
+            favs.remove(song.id)
+            favSongs.removeAll { $0.id == song.id }
+        } else {
+            favs.insert(song.id)
+            favSongs.insert(song, at: 0)
+        }
         saveFavs()
+        saveFavSongs()
     }
     func isFav(_ id: String) -> Bool { favs.contains(id) }
+
+    private func saveFavSongs() {
+        let arr = favSongs.map { $0.toDict() }
+        if let d = try? JSONSerialization.data(withJSONObject: arr) {
+            UserDefaults.standard.set(d, forKey: "kuxuan_fav_songs")
+        }
+    }
+    private func loadFavSongs() {
+        guard let d = UserDefaults.standard.data(forKey: "kuxuan_fav_songs"),
+              let arr = try? JSONSerialization.jsonObject(with: d) as? [[String: Any]] else { return }
+        favSongs = arr.map { Song(dict: $0) }
+    }
 
     // MARK: - 主色 / 歌词
     private func updateCover(_ path: String) async {
