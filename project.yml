@@ -46,6 +46,11 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
+        # 关键：没有 Launch Screen 声明时 iOS 会退回 320x480 兼容模式，
+        # 再等比放大填满屏宽 → 上下各约 15.4% 黑边、右侧内容被裁、底部控件被挤出。
+        # UIColorName 空串是 Xcode 官方模板写法，不要删。
+        UILaunchScreen:
+          UIColorName: ""
     settings:
       base:
         # 关键：关闭 Xcode 自动生成 Info.plist，否则 KuXuan/Info.plist 会被完全忽略，
