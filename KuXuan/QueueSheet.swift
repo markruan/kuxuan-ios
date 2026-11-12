@@ -34,8 +34,7 @@ struct QueueSheet: View {
                                         }
                                         Spacer()
                                         if i == player.currentIndex {
-                                            Image(systemName: "speaker.wave.2.fill")
-                                                .foregroundColor(.kxAccent)
+                                            KXIcon(icon: .wave, size: 17, color: .kxAccent)
                                         }
                                     }
                                     .foregroundColor(i == player.currentIndex ? .kxAccent : .primary)
