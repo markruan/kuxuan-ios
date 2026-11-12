@@ -31,6 +31,29 @@ struct Song: Identifiable, Equatable {
     }
 }
 
+extension Song {
+    /// 可写入网易云「我喜欢的音乐」的真实歌曲 id。
+    /// 后端 _norm_song 给所有在线歌曲统一加 "online:" 前缀（如 online:1964713291），
+    /// 而上游 /like 只接受纯数字 id。此前 toggleFav 直接判断 song.id 是否纯数字，
+    /// 结果所有在线歌曲都被误判为「本地曲目」，收藏只写本机 —— 即「假收藏」的根因。
+    var ncmID: String? {
+        let raw = id.hasPrefix("online:") ? String(id.dropFirst("online:".count)) : id
+        return !raw.isEmpty && raw.allSatisfy({ $0.isNumber }) ? raw : nil
+    }
+}
+
+// MARK: - 云端红心列表（/api/ncm/likelist）
+struct NCMLikeListResp {
+    let ids: [String]
+    let songs: [Song]
+    let count: Int
+    init(dict: [String: Any]) {
+        ids = (dict["ids"] as? [Any] ?? []).map { String(describing: $0) }
+        songs = (dict["songs"] as? [[String: Any]] ?? []).map { Song(dict: $0) }
+        count = (dict["count"] as? Int) ?? ids.count
+    }
+}
+
 struct Playlist: Identifiable {
     let id: String
     let name: String
@@ -129,10 +152,20 @@ struct PlaylistDetailResp {
     }
 }
 
+/// 逐字歌词：单字/词在整首歌里的绝对开始时间与持续时长（秒）
+struct LyricWord: Identifiable, Equatable {
+    let id = UUID()
+    let time: Double
+    let duration: Double
+    let text: String
+}
+
 struct LyricLine: Identifiable, Equatable {
     let id = UUID()
     let time: Double
     let text: String
+    var words: [LyricWord] = []     // 逐字（yrc）可选，空则按整行高亮
+    var translation: String = ""     // 翻译（tlyric）可选
 }
 
 func int64(_ v: Any?) -> Int64 {
@@ -166,6 +199,65 @@ func parseLRC(_ text: String) -> [LyricLine] {
         for t in times { out.append(LyricLine(time: t, text: txt)) }
     }
     return out.sorted { $0.time < $1.time }
+}
+
+// MARK: - 逐字歌词（网易云 yrc 增强格式）
+/// yrc 形如：[0,1000](0,235,0)词(235,308,0)儿(543,344,0)啊
+/// 行内 [startMs,endMs] 为整行时间；每个 (relMs,durMs,0)词 为逐字相对时间+时长。
+func parseYRC(_ text: String) -> [(time: Double, words: [LyricWord])] {
+    var out: [(Double, [LyricWord])] = []
+    guard let lineRe = try? NSRegularExpression(pattern: #"\[(\d+),\d+\]([\s\S]*)"#),
+          let wordRe = try? NSRegularExpression(pattern: #"\((\d+),(\d+),\d+\)([\s\S]*?)(?=\(|\Z)"#) else {
+        return out
+    }
+    for raw in text.components(separatedBy: "\n") {
+        let ns = raw as NSString
+        guard let lm = lineRe.firstMatch(in: raw, range: NSRange(location: 0, length: ns.length)) else { continue }
+        guard let ls = Double(ns.substring(with: lm.range(at: 1))) else { continue }
+        let body = ns.substring(with: lm.range(at: 2))
+        var words: [LyricWord] = []
+        let bns = body as NSString
+        for wm in wordRe.matches(in: body, range: NSRange(location: 0, length: bns.length)) {
+            let rel = Double(bns.substring(with: wm.range(at: 1))) ?? 0
+            let dur = Double(bns.substring(with: wm.range(at: 2))) ?? 0
+            let wtext = bns.substring(with: wm.range(at: 3))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if wtext.isEmpty { continue }
+            words.append(LyricWord(time: (ls + rel) / 1000.0,
+                                  duration: dur / 1000.0,
+                                  text: wtext))
+        }
+        if !words.isEmpty { out.append((ls / 1000.0, words)) }
+    }
+    return out
+}
+
+/// 解析普通 LRC，再把逐字(yrc)与翻译(tlyric)按时间就近合并到各行。
+func parseEnhancedLyrics(lrc: String, yrc: String, tlyric: String) -> [LyricLine] {
+    var lines = parseLRC(lrc)
+    guard !lines.isEmpty else { return lines }
+
+    if !yrc.isEmpty {
+        let ylines = parseYRC(yrc)
+        for i in lines.indices {
+            if let best = ylines.min(by: {
+                abs($0.time - lines[i].time) < abs($1.time - lines[i].time)
+            }), abs(best.time - lines[i].time) < 0.6 {
+                lines[i].words = best.words
+            }
+        }
+    }
+    if !tlyric.isEmpty {
+        let tl = parseLRC(tlyric)
+        for i in lines.indices {
+            if let best = tl.min(by: {
+                abs($0.time - lines[i].time) < abs($1.time - lines[i].time)
+            }), abs(best.time - lines[i].time) < 0.6 {
+                lines[i].translation = best.text
+            }
+        }
+    }
+    return lines
 }
 
 // MARK: - 账号体系（/api/auth/*）
@@ -236,12 +328,58 @@ struct NCMPlaylist: Identifiable {
     let cover: String
     let trackCount: Int
     let creator: String
+    let subscribed: Bool
     init(dict: [String: Any]) {
         self.id = String(describing: dict["id"] ?? "")
         self.name = (dict["name"] as? String) ?? "未命名歌单"
         self.cover = (dict["cover"] as? String) ?? ""
         self.trackCount = (dict["trackCount"] as? Int) ?? 0
         self.creator = (dict["creator"] as? String) ?? ""
+        self.subscribed = (dict["subscribed"] as? Bool) ?? false
+    }
+
+    /// 成员构造器：用于本地同步收藏状态（无需重打接口）。
+    init(id: String, name: String, cover: String, trackCount: Int, creator: String, subscribed: Bool) {
+        self.id = id; self.name = name; self.cover = cover
+        self.trackCount = trackCount; self.creator = creator; self.subscribed = subscribed
+    }
+}
+
+// MARK: - 搜索：歌手 / 歌单
+struct NCMArtist: Identifiable {
+    let id: String
+    let name: String
+    let cover: String
+    let albumSize: Int
+    let musicSize: Int
+    init(dict: [String: Any]) {
+        self.id = String(describing: dict["id"] ?? "")
+        self.name = (dict["name"] as? String) ?? "未知歌手"
+        self.cover = (dict["cover"] as? String) ?? ""
+        self.albumSize = (dict["albumSize"] as? Int) ?? 0
+        self.musicSize = (dict["musicSize"] as? Int) ?? 0
+    }
+}
+
+struct NCMSearchPlaylist: Identifiable {
+    let id: String
+    let name: String
+    let cover: String
+    let playCount: Int64
+    let trackCount: Int64
+    let creator: String
+    init(dict: [String: Any]) {
+        self.id = String(describing: dict["id"] ?? "")
+        self.name = (dict["name"] as? String) ?? "歌单"
+        self.cover = (dict["cover"] as? String) ?? ""
+        self.playCount = int64(dict["playCount"])
+        self.trackCount = int64(dict["trackCount"])
+        self.creator = (dict["creator"] as? String) ?? ""
+    }
+    var playCountText: String {
+        if playCount >= 100_000_000 { return String(format: "%.1f亿", Double(playCount) / 100_000_000) }
+        if playCount >= 10_000 { return String(format: "%.1f万", Double(playCount) / 10_000) }
+        return "\(playCount)"
     }
 }
 
