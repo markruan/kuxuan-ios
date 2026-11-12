@@ -21,6 +21,9 @@ final class AuthStore: ObservableObject {
     @Published var qrImage: UIImage?
     @Published var qrMessage: String = ""
     @Published var qrBound: Bool = false
+    /// 生成本次二维码时服务端是否已绑定。用于区分「本次扫码成功」和「本来就绑过账号」，
+    /// 否则已绑定用户点「切换 / 重新扫码」会被旧 cookie 立刻误判为成功。
+    private var qrWasBoundAtStart = false
 
     var isLoggedIn: Bool { !token.isEmpty && user != nil }
     var displayName: String {
@@ -135,7 +138,18 @@ final class AuthStore: ObservableObject {
             let me = try await APIClient.ncmMe()
             ncmBound = me.bound
             ncmProfile = me.profile
-            if me.bound { await loadNCMPlaylists() } else { ncmPlaylists = [] }
+            if me.bound {
+                // 绑定态是唯一真相源。后端有独立监控线程，扫码确认后会把 cookie 落库；
+                // 客户端可能因为切到网易云 App 被挂起而错过那一次 803 轮询，
+                // 所以只要 /ncm/me 已绑定，二维码页也要立刻同步成成功态。
+                if !qrKey.isEmpty, !qrBound, !qrWasBoundAtStart {
+                    qrBound = true
+                    qrMessage = "登录成功"
+                }
+                await loadNCMPlaylists()
+            } else {
+                ncmPlaylists = []
+            }
         } catch {
             ncmBound = false
             ncmProfile = nil
@@ -143,10 +157,29 @@ final class AuthStore: ObservableObject {
         }
     }
 
+    /// 回到前台时调用：先查服务端绑定态，没绑定再查二维码轮询缓存。
+    /// 不重新生成二维码（旧 key 仍由后端监控线程持有），也避免依赖 803 的时序。
+    @MainActor
+    func resumeQRCheck() async {
+        await refreshNCM()
+        guard !qrBound, !qrKey.isEmpty else { return }
+        await pollQR()
+    }
+
     @MainActor
     func loadNCMPlaylists() async {
         do { ncmPlaylists = try await APIClient.ncmPlaylists() }
         catch { lastError = "歌单拉取失败：\(error.localizedDescription)" }
+    }
+
+    /// 本地同步某歌单的收藏状态（不触发网络请求），用于乐观更新后保持缓存一致，
+    /// 避免重开页面时状态回退，也减少订阅接口的调用频次。
+    @MainActor
+    func syncSubscription(id: String, subscribed flag: Bool) {
+        guard let idx = ncmPlaylists.firstIndex(where: { $0.id == id }) else { return }
+        let old = ncmPlaylists[idx]
+        ncmPlaylists[idx] = NCMPlaylist(id: old.id, name: old.name, cover: old.cover,
+                                        trackCount: old.trackCount, creator: old.creator, subscribed: flag)
     }
 
     @MainActor
@@ -160,6 +193,7 @@ final class AuthStore: ObservableObject {
     // MARK: - 扫码登录
     @MainActor
     func startQR() async {
+        qrWasBoundAtStart = ncmBound
         qrBound = false
         qrImage = nil
         qrMessage = "正在获取二维码…"
