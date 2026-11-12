@@ -28,6 +28,19 @@ targets:
       - path: KuXuan/QueueSheet.swift
       - path: KuXuan/MiniPlayer.swift
       - path: KuXuan/SettingsView.swift
+      # App 图标：不用 Assets.xcassets（本机 Xcode 缺 iOS 17.2 模拟器运行时，
+      # actool 编译单张 1024 通用图标会报 Failed to locate any simulator runtime）。
+      # 改为各尺寸 PNG 直接进 bundle，由 Info.plist 的 CFBundleIconFiles 声明。
+      - path: KuXuan/Icon-60@2x.png
+      - path: KuXuan/Icon-60@3x.png
+      - path: KuXuan/Icon-76@2x.png
+      - path: KuXuan/Icon-83.5@2x.png
+      - path: KuXuan/Icon-Small@2x.png
+      - path: KuXuan/Icon-Small@3x.png
+      - path: KuXuan/Icon-Spotlight-40@2x.png
+      - path: KuXuan/Icon-Spotlight-40@3x.png
+      - path: KuXuan/Icon-Notification-20@2x.png
+      - path: KuXuan/Icon-Notification-20@3x.png
     info:
       path: KuXuan/Info.plist
       # 必须显式写在这里：xcodegen generate 会用下面的内容覆写 KuXuan/Info.plist，
@@ -55,6 +68,25 @@ targets:
         # UIColorName 空串是 Xcode 官方模板写法，不要删。
         UILaunchScreen:
           UIColorName: ""
+        # GENERATE_INFOPLIST_FILE=NO 时 Xcode 不会自动注入 CFBundleIcons，必须显式声明。
+        # 名字写基准名，iOS 按设备倍数自动取 @2x / @3x 文件。
+        CFBundleIcons:
+          CFBundlePrimaryIcon:
+            CFBundleIconFiles:
+              - Icon-60
+              - Icon-Spotlight-40
+              - Icon-Small
+              - Icon-Notification-20
+            UIPrerenderedIcon: true
+        CFBundleIcons~ipad:
+          CFBundlePrimaryIcon:
+            CFBundleIconFiles:
+              - Icon-76
+              - Icon-83.5
+              - Icon-Spotlight-40
+              - Icon-Small
+              - Icon-Notification-20
+            UIPrerenderedIcon: true
     settings:
       base:
         # 关键：关闭 Xcode 自动生成 Info.plist，否则 KuXuan/Info.plist 会被完全忽略，
