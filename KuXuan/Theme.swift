@@ -49,6 +49,8 @@ enum KXRadius {
     static let lg: CGFloat = 24
     static let xl: CGFloat = 30
     static let pill: CGFloat = 999
+    /// 列表内封面 / 缩略图圆角（40–46pt 方形封面的统一取值）
+    static let cover: CGFloat = 8
 }
 
 // MARK: - 卡片修饰（圆角 + 柔阴影 + 系统自适应表面色）
@@ -413,6 +415,31 @@ struct KXLabel: View {
             KXIcon(icon: icon, size: 19, color: color)
                 .frame(width: 20, alignment: .center)
             Text(title)
+        }
+    }
+}
+
+/// 统一列表行：左图标 + 标题，右可选值。个人中心 / 设置等列表页共用，
+/// 保证图标尺寸、配色、标题与值字号完全一致，避免不同页面各写一套行样式。
+struct KXListRow: View {
+    let icon: KXIconName
+    let title: String
+    var value: String? = nil
+    var valueHighlighted: Bool = false
+
+    var body: some View {
+        HStack(spacing: 11) {
+            KXIcon(icon: icon, size: 19, color: .kxAccent)
+                .frame(width: 20, alignment: .center)
+            Text(title)
+                .font(.body)
+            Spacer()
+            if let value {
+                Text(value)
+                    .font(.caption2)
+                    .foregroundColor(valueHighlighted ? .kxAccent : .secondary)
+                    .lineLimit(1)
+            }
         }
     }
 }
