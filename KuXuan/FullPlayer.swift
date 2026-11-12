@@ -1093,13 +1093,43 @@ struct VinylDiscLyricsView: View {
 
     // 唱臂已移除；唱片旋转隔离到下方 VinylRotatingDisc 子视图（消除整页重绘抖动）
 
-// MARK: - 黑胶旋转（独立子视图：定时器与合成隔离在内部，消除整页重绘抖动）
+// MARK: - 黑胶旋转（独立子视图）
+/// 平滑化要点：
+/// 1) 角度按「真实经过时间 dt」累计（accumulated += degPerSec * dt），而非固定步进，
+///    掉帧/定时器漂移时自动补偿，不再忽快忽慢；
+/// 2) 60fps 定时器，与屏幕刷新更接近；
+/// 3) 暂停时冻结角度（last 仍更新，恢复时无跳变）；
+/// 4) 去掉 .compositingGroup()，改由 GPU 直接整层变换，消除逐帧重栅格化的微闪。
 private struct VinylRotatingDisc: View {
     let d: CGFloat
     let coverURL: URL?
+    @EnvironmentObject var player: PlayerEngine
+    private let rotationSeconds: Double = 4.8          // 一圈约 4.8 秒
+    private var degPerSec: Double { 360 / rotationSeconds }
+
+    @State private var accumulated: Double = 0
+    @State private var last: Date = Date()
+    @State private var ticker = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        DiscArt(d: d, coverURL: coverURL)
+            .frame(width: d, height: d)
+            .rotationEffect(.degrees(accumulated))
+            .onReceive(ticker) { now in
+                let dt = now.timeIntervalSince(last)
+                last = now
+                guard player.isPlaying else { return }
+                accumulated += degPerSec * dt
+                if accumulated >= 360 { accumulated -= 360 }
+            }
+    }
+}
+
+// 静态唱片画面（与旋转角度无关，避免每帧重建渐变/沟槽）
+private struct DiscArt: View {
+    let d: CGFloat
+    let coverURL: URL?
     private let coverPercent: CGFloat = 0.40   // 真实黑胶中心标贴约占 1/3 盘面
-    @State private var angle: Double = 0
-    @State private var ticker = Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ZStack {
@@ -1130,13 +1160,6 @@ private struct VinylRotatingDisc: View {
             .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: d * 0.012))
             // 中心孔
             Circle().fill(Color.black).frame(width: d * 0.03, height: d * 0.03)
-        }
-        .frame(width: d, height: d)
-        .rotationEffect(.degrees(angle))
-        .compositingGroup()
-        .onReceive(ticker) { _ in
-            angle += 2.5          // ≈ 4.8s/圈，接近真实唱机转速又不眩晕
-            if angle >= 360 { angle -= 360 }
         }
     }
 }
@@ -2074,29 +2097,33 @@ struct SongInfoSheet: View {
 }
 
 // MARK: - 旋转专辑封面（独立子视图）
-/// 抖动根因：原来 FullPlayer 用 0.05s 定时器回写 @State angle，
-/// 会让整页 body（GeometryReader、55pt 高斯模糊背景、歌词 ScrollView）每秒重算 20 次。
-/// 现在定时器状态只留在这个子视图，且旋转层用 compositingGroup 走合成，不触发布局重排。
+/// 平滑化：角度按真实经过时间 dt 累计（accumulated += degPerSec * dt），60fps 定时器；
+/// 暂停时冻结；去掉 .compositingGroup()，由 GPU 直接整层变换，消除逐帧重栅格化的微闪。
 private struct RotatingAlbumCover: View {
     let url: URL?
     let isPlaying: Bool
-    @State private var angle: Double = 0
-    @State private var ticker = Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()
+    private let rotationSeconds: Double = 20           // 一圈约 20 秒
+    private var degPerSec: Double { 360 / rotationSeconds }
+
+    @State private var accumulated: Double = 0
+    @State private var last: Date = Date()
+    @State private var ticker = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ZStack {
             Circle().fill(Color.white.opacity(0.07)).frame(width: 300, height: 300)
             albumImage
                 .frame(width: 266, height: 266)
-                .rotationEffect(.degrees(angle))
-                .compositingGroup()
+                .rotationEffect(.degrees(accumulated))
             Circle().stroke(Color.white.opacity(0.16), lineWidth: 1)
                 .frame(width: 286, height: 286)
         }
-        .onReceive(ticker) { _ in
+        .onReceive(ticker) { now in
+            let dt = now.timeIntervalSince(last)
+            last = now
             guard isPlaying else { return }
-            angle += 0.6
-            if angle >= 360 { angle -= 360 }
+            accumulated += degPerSec * dt
+            if accumulated >= 360 { accumulated -= 360 }
         }
     }
 
