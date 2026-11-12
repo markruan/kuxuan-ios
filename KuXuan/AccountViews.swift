@@ -189,7 +189,7 @@ struct AccountCenterView: View {
                 NavigationLink(value: PlaylistRef(id: pl.id, name: pl.name, cover: pl.cover)) {
                     HStack(spacing: 10) {
                         KXCover(url: APIClient.proxiedPicURL(pl.cover))
-                            .frame(width: 40, height: 40).cornerRadius(7)
+                            .frame(width: 40, height: 40).cornerRadius(KXRadius.cover)
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 4) {
                                 Text(pl.name).font(.subheadline).lineLimit(1)
@@ -197,7 +197,7 @@ struct AccountCenterView: View {
                                     Text("收藏")
                                         .font(.caption2).foregroundColor(.kxAccent)
                                         .padding(.horizontal, 5).padding(.vertical, 1)
-                                        .background(Capsule().fill(Color.kxAccent.opacity(0.15)))
+                                        .background(Capsule().fill(Color.kxAccent.opacity(0.12)))
                                 }
                             }
                             Text("\(pl.trackCount) 首 · \(pl.creator)")
@@ -322,17 +322,11 @@ struct AccountCenterView: View {
         }
     }
 
-    /// 统一的「图标 + 标题 + 右侧值」行：值一律中性色，需要强调时才用品牌色。
-    private func rowWithValue<Label: View>(_ label: Label, value: String,
-                                           highlight: Bool = false) -> some View {
-        HStack {
-            label
-            Spacer()
-            Text(value)
-                .font(.caption2)
-                .foregroundColor(highlight ? .kxAccent : .secondary)
-                .lineLimit(1)
-        }
+    /// 统一的「图标 + 标题 + 右侧值」行：委托给 KXListRow，与个人中心 / 设置共用同一套样式。
+    private func rowWithValue(_ label: KXLabel, value: String,
+                              highlight: Bool = false) -> some View {
+        KXListRow(icon: label.icon, title: label.title,
+                  value: value, valueHighlighted: highlight)
     }
 }
 
@@ -459,7 +453,7 @@ struct SongListPage: View {
                     } label: {
                         HStack(spacing: 12) {
                             KXCover(url: APIClient.coverURL(s.cover, size: 120))
-                                .frame(width: 46, height: 46).cornerRadius(8)
+                                .frame(width: 46, height: 46).cornerRadius(KXRadius.cover)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(s.title).font(.subheadline).lineLimit(1)
                                 Text(s.artist).font(.caption).foregroundColor(.secondary).lineLimit(1)
