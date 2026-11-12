@@ -62,8 +62,8 @@ struct SettingsView: View {
 
             Section("本机服务") {
                 if let s = service {
-                    row("本地曲库", "\(s.library) 首")
-                    row("上游音源", s.onlineApi)
+                    row(.note, "本地曲库", "\(s.library) 首")
+                    row(.network, "上游音源", s.onlineApi)
                 } else {
                     Text("读取失败，请确认后端服务正在运行")
                         .font(.footnote).foregroundColor(.secondary)
@@ -98,12 +98,8 @@ struct SettingsView: View {
         }
     }
 
-    private func row(_ title: String, _ value: String) -> some View {
-        HStack {
-            Text(title).font(.footnote)
-            Spacer()
-            Text(value).font(.caption2).foregroundColor(.secondary).lineLimit(1)
-        }
+    private func row(_ icon: KXIconName, _ title: String, _ value: String) -> some View {
+        KXListRow(icon: icon, title: title, value: value)
     }
 
     private func test() async {
