@@ -1,19 +1,152 @@
 import SwiftUI
 import UIKit
+import CryptoKit
+
+// MARK: - 图片缓存（内存 + 磁盘 + 同 URL 请求去重）
+/// 系统 AsyncImage 没有图片缓存，后端响应又默认 Cache-Control: no-cache，
+/// 列表滚动 / 页面切换时同一张封面会被反复下载。这里做三层：
+///  1) 内存 NSCache（已解码 UIImage，滚回来零延迟、不闪白）
+///  2) 磁盘 Caches/KXImages（按 URL 的 SHA256 命名，重启后仍在；超过 100MB 清掉最旧 1/3）
+///  3) 网络；同一 URL 的并发请求合并成一次，失败不写缓存、下次自动重试
+final class KXImageCache {
+    static let shared = KXImageCache()
+
+    private let memory = NSCache<NSURL, UIImage>()   // NSCache 自身线程安全
+    private let lock = NSLock()
+    // token 用于「谁创建谁清理」，避免任一等待者清空字典时误删别人的新登记
+    private var inflight: [URL: (token: UUID, task: Task<UIImage?, Never>)] = [:]
+    private let dir: URL?
+    private var lastPrune = Date.distantPast
+
+    private init() {
+        memory.countLimit = 300
+        memory.totalCostLimit = 48 * 1024 * 1024
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        let d = caches?.appendingPathComponent("KXImages", isDirectory: true)
+        if let d { try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true) }
+        dir = d
+        pruneIfNeeded()
+    }
+
+    func image(for url: URL) async -> UIImage? {
+        if let hit = memory.object(forKey: url as NSURL) { return hit }
+
+        // 同一 URL 同时被多个 cell 请求时只发一次网络请求
+        let task: Task<UIImage?, Never> = {
+            lock.lock(); defer { lock.unlock() }
+            if let running = inflight[url]?.task { return running }
+            let token = UUID()
+            let t = Task<UIImage?, Never> {
+                // 创建者自己清理（同步上下文），避免多个等待者各自清空字典造成竞态
+                defer { self.clearInflight(url, token: token) }
+                let file = self.diskFile(for: url)
+                if let data = try? Data(contentsOf: file), let img = UIImage(data: data) {
+                    self.store(img, for: url)
+                    return img
+                }
+                var req = URLRequest(url: url)
+                req.timeoutInterval = 20
+                req.setValue("image/*", forHTTPHeaderField: "Accept")
+                do {
+                    let (data, resp) = try await URLSession.shared.data(for: req)
+                    let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+                    guard code == 200, let img = UIImage(data: data) else { return nil }
+                    self.store(img, for: url)
+                    try? data.write(to: file, options: .atomic)
+                    self.pruneIfNeeded()
+                    return img
+                } catch {
+                    return nil
+                }
+            }
+            inflight[url] = (token: token, task: t)
+            return t
+        }()
+        return await task.value
+    }
+
+    private func clearInflight(_ url: URL, token: UUID) {
+        lock.lock(); defer { lock.unlock() }
+        if inflight[url]?.token == token { inflight[url] = nil }
+    }
+
+    private func store(_ img: UIImage, for url: URL) {
+        // UIImage.size 是 points，真实解码位图要乘 scale，否则 cost 低估 4~9 倍
+        let w = img.size.width * img.scale, h = img.size.height * img.scale
+        let cost = max(1, Int(w * h * 4))
+        memory.setObject(img, forKey: url as NSURL, cost: cost)
+    }
+
+    private func diskFile(for url: URL) -> URL {
+        let hex = KXImageCache.digest(url.absoluteString)
+        return (dir ?? URL(fileURLWithPath: NSTemporaryDirectory()))
+            .appendingPathComponent(hex + ".img")
+    }
+
+    private static func digest(_ s: String) -> String {
+        SHA256.hash(data: Data(s.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func pruneIfNeeded() {
+        let now = Date()
+        lock.lock()
+        guard now.timeIntervalSince(lastPrune) > 60 else { lock.unlock(); return }
+        lastPrune = now
+        lock.unlock()
+        guard let dir,
+              let files = try? FileManager.default.contentsOfDirectory(
+                  at: dir, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey]) else { return }
+        let total = files.reduce(0) { sum, f in
+            sum + ((try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        }
+        guard total > 100 * 1024 * 1024 else { return }
+        let sorted = files.sorted { a, b in
+            let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return da < db
+        }
+        for f in sorted.prefix(files.count / 3) { try? FileManager.default.removeItem(at: f) }
+    }
+}
+
+/// 带缓存的远程图片。placeholder 传 nil 时加载中/失败不占布局（用于已有底色的头像位）。
+struct KXCachedImage: View {
+    let url: URL?
+    var placeholder: Color? = Color(.systemFill)
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else if let placeholder {
+                placeholder
+            } else {
+                EmptyView()
+            }
+        }
+        .task(id: url) {
+            guard let url else { image = nil; return }
+            image = nil
+            let loaded = await KXImageCache.shared.image(for: url)
+            guard !Task.isCancelled else { return }
+            image = loaded
+        }
+    }
+}
 
 // 封面图通用组件（多页面复用）
 // 关键：scaledToFill 的图片必须被 .clipped() 约束，否则会按原图像素撑开父视图，
 // 在 LazyVGrid 中把行高顶坏，导致第二行图片与第一行重叠。
 struct KXCover: View {
     let url: URL?
+    /// 封面默认视为装饰图，不占 VoiceOver 焦点；确需语义时由调用处传入标签
+    var a11yLabel: String? = nil
     var body: some View {
-        AsyncImage(url: url) { phase in
-            switch phase {
-            case .success(let img): img.resizable().scaledToFill()
-            default: Color(.systemFill)
-            }
-        }
-        .clipped()
+        KXCachedImage(url: url)
+            .clipped()
+            .accessibilityHidden(a11yLabel == nil)
+            .accessibilityLabel(a11yLabel ?? "")
     }
 }
 
@@ -232,7 +365,7 @@ struct HomeView: View {
     private func bannerCard(_ b: Banner, w: CGFloat, h: CGFloat) -> some View {
         ZStack(alignment: .bottomLeading) {
             Color(.systemFill)                        // 无 intrinsic size，先钉死坐标系
-            KXCover(url: APIClient.coverURL(b.img))
+            KXCover(url: APIClient.coverURL(b.img, size: 720))
                 .frame(width: w, height: h)
                 .clipped()
             LinearGradient(colors: [.clear, .black.opacity(0.55)],
