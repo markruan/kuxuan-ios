@@ -67,13 +67,21 @@ struct RootView: View {
             // 全屏播放页与迷你条都是硬切出现/消失。
             .animation(.easeInOut(duration: 0.34), value: player.showFullPlayer)
             .animation(.easeInOut(duration: 0.28), value: player.queue.isEmpty)
-        }
+            // 歌手页：任意位置点歌手名/头像都会设置 player.artistToShow，这里承接为全屏浮层。
+            // 置于 RootView 层级，可覆盖全屏播放器与迷你条，且自身用 NavigationStack 支持相似歌手下钻。
+            .fullScreenCover(item: $player.artistToShow) { mini in
+                ArtistView(mini: mini)
+                    .environmentObject(player)
+                    .environmentObject(auth)
+                    .preferredColorScheme(nil)
+            }
         // 从网易云 App 切回来时立刻核对服务端绑定态与二维码状态
         .onChange(of: scenePhase) { phase in
             if phase == .active { Task { await auth.resumeQRCheck() } }
         }
-    }
-}
+        }   // GeometryReader 结束
+    }   // body 结束
+}   // RootView 结束
 
 /// 方向锁：默认竖屏；进入全屏歌词时切横屏，返回时恢复竖屏。
 class AppDelegate: NSObject, UIApplicationDelegate {
