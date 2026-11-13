@@ -1755,7 +1755,7 @@ struct BounceLyricsView: View {
     private func stage(_ geo: GeometryProxy) -> some View {
         let isPortrait = geo.size.width < geo.size.height
         let mainSize: CGFloat = isPortrait ? 28 : 33
-        VStack(spacing: isPortrait ? 18 : 30) {
+        return VStack(spacing: isPortrait ? 18 : 30) {
             if activeIndex - 1 >= 0, activeIndex - 1 < lines.count {
                 lineText(lines[activeIndex - 1], size: isPortrait ? 19 : 22)
                     .opacity(isPortrait ? 0.26 : 0.34)
