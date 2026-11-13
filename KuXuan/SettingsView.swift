@@ -6,7 +6,6 @@ struct SettingsView: View {
     @EnvironmentObject var player: PlayerEngine
     @EnvironmentObject var auth: AuthStore
     @State private var status: String = ""
-    @State private var service: ServiceStatus?
     @State private var quality: String = APIClient.audioQuality
     @AppStorage("kuxuan_lyrics_style") private var lyricsStyleRaw: String = LyricsStyle.miSide.rawValue
 
@@ -60,33 +59,17 @@ struct SettingsView: View {
                     .tint(.kxAccent)
             }
 
-            Section("本机服务") {
-                if let s = service {
-                    row(.note, "本地曲库", "\(s.library) 首")
-                    row(.network, "上游音源", s.onlineApi)
-                } else {
-                    Text("读取失败，请确认后端服务正在运行")
-                        .font(.footnote).foregroundColor(.secondary)
-                }
-            }
-
             Section("网易云账号") {
                 HStack(spacing: 8) {
                     KXIcon(icon: auth.ncmBound ? .checkCircle : .person,
                            size: 18, color: .kxAccent)
-                    Text(auth.ncmBound ? "已绑定" : "未绑定")
+                    Text(auth.ncmBound ? (auth.ncmProfile?.nickname ?? "网易云") : "未连接网易云")
+                        .font(.subheadline)
                     Spacer()
-                    Text(auth.ncmProfile?.nickname ?? "未绑定")
-                        .font(.footnote).foregroundColor(.secondary)
                 }
-                Text("绑定后，点 ♡ 收藏会同步到网易云「我喜欢的音乐」；也可新建歌单、把歌曲加入歌单。解绑后仅保存在本机。")
+                Text("登录后，收藏的歌曲会保存到网易云「我喜欢的音乐」，也可新建与管理歌单。")
                     .font(.caption2).foregroundColor(.secondary)
             }
-
-            Section {
-                Text("服务已部署在云端，手机使用移动网络或 Wi-Fi 均可直接访问，无需与本机同一网络。")
-                    .font(.footnote).foregroundColor(.secondary)
-            } header: { Text("如何连接") }
         }
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
@@ -94,19 +77,13 @@ struct SettingsView: View {
         .task {
             status = ""
             quality = APIClient.audioQuality
-            service = try? await APIClient.serviceStatus()
         }
-    }
-
-    private func row(_ icon: KXIconName, _ title: String, _ value: String) -> some View {
-        KXListRow(icon: icon, title: title, value: value)
     }
 
     private func test() async {
         do {
             let h = try await APIClient.home()
             status = h.online ? "连接成功，在线音源可用" : "已连接，但上游暂不可用（\(h.statusText)）"
-            service = try? await APIClient.serviceStatus()
         } catch {
             status = "连接失败：\(error.localizedDescription)"
         }
