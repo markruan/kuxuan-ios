@@ -206,7 +206,7 @@ struct CommentSheet: View {
             ZStack {
                 Circle().fill(LinearGradient.kxSoft)
                 if !c.avatar.isEmpty {
-                    AsyncImage(url: APIClient.proxiedPicURL(c.avatar)) { phase in
+                    AsyncImage(url: APIClient.proxiedPicURL(c.avatar, size: 80)) { phase in
                         if case .success(let im) = phase {
                             im.resizable().scaledToFill().clipShape(Circle())
                         }
