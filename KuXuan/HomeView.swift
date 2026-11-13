@@ -89,7 +89,7 @@ struct HomeView: View {
                 .environmentObject(auth)
         }
         .sheet(isPresented: $showAccount) {
-            AccountCenterView()
+            AccountCenterView(onClose: { showAccount = false })
                 .environmentObject(player)
                 .environmentObject(auth)
         }
