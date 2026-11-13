@@ -464,10 +464,16 @@ struct KXBackButton: View {
                 KXIcon(icon: .chevronLeft, size: 20, color: .primary)
                     .frame(width: 22, height: 22)
                 if !label.isEmpty {
-                    Text(label).font(.system(size: 16))
+                    Text(label).font(.body)
                 }
             }
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
         }
+        // 自绘图标不产生文本、系统返回箭头又被隐藏，必须显式给 VoiceOver 标签，
+        // 否则所有二级页的返回按钮只会被读成「按钮」。
+        .accessibilityLabel(label.isEmpty ? "返回" : label)
+        .accessibilityHint("返回上一页")
     }
 }
 
