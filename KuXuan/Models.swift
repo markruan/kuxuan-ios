@@ -8,6 +8,7 @@ struct Song: Identifiable, Equatable {
     let file: String
     let title: String
     let artist: String
+    let artistId: String   // 歌手 id（后端 _norm_song 已透传，用于跳转到歌手页/收藏歌手）
     let album: String
     let duration: Double   // 秒
     let hasLyric: Bool
@@ -21,6 +22,7 @@ struct Song: Identifiable, Equatable {
         self.file = String(describing: dict["file"] ?? "")
         self.title = (dict["title"] as? String) ?? "未知歌曲"
         self.artist = (dict["artist"] as? String) ?? "未知艺术家"
+        self.artistId = (dict["artistId"] as? String) ?? ""
         self.album = (dict["album"] as? String) ?? ""
         let d = dict["duration"] as? Double ?? Double(dict["duration"] as? Int ?? 0)
         self.duration = d
@@ -380,6 +382,99 @@ struct NCMSearchPlaylist: Identifiable {
         if playCount >= 100_000_000 { return String(format: "%.1f亿", Double(playCount) / 100_000_000) }
         if playCount >= 10_000 { return String(format: "%.1f万", Double(playCount) / 10_000) }
         return "\(playCount)"
+    }
+}
+
+// MARK: - 歌手详情（/api/online/artist/<id>/detail）
+/// 轻量歌手：用于「打开歌手页 / 相似歌手 / 收藏列表」的最小信息。
+/// 同时是 Identifiable + Equatable，可直接作为 fullScreenCover(item:) 的 item。
+struct MiniArtist: Identifiable, Equatable, Hashable {
+    let id: String
+    let name: String
+    let cover: String
+    init(id: String, name: String, cover: String) {
+        self.id = id; self.name = name; self.cover = cover
+    }
+    init(dict: [String: Any]) {
+        self.id = String(describing: dict["id"] ?? "")
+        self.name = (dict["name"] as? String) ?? "未知歌手"
+        self.cover = (dict["cover"] as? String) ?? ""
+    }
+}
+
+/// 专辑（歌手详情里的 hotAlbums）
+struct ArtistAlbum: Identifiable {
+    let id: String
+    let name: String
+    let cover: String
+    init(dict: [String: Any]) {
+        self.id = String(describing: dict["id"] ?? "")
+        self.name = (dict["name"] as? String) ?? ""
+        self.cover = (dict["cover"] as? String) ?? ""
+    }
+}
+
+/// 歌手详情：头部信息 + 热门歌曲 + 专辑 + 相似歌手
+struct KBArtistDetail {
+    let id: String
+    let name: String
+    let cover: String
+    let albumSize: Int
+    let musicSize: Int
+    let briefDesc: String
+    let introduction: [(title: String, text: String)]
+    init(dict: [String: Any]) {
+        self.id = String(describing: dict["id"] ?? "")
+        self.name = (dict["name"] as? String) ?? "未知歌手"
+        self.cover = (dict["cover"] as? String) ?? ""
+        self.albumSize = (dict["albumSize"] as? Int) ?? 0
+        self.musicSize = (dict["musicSize"] as? Int) ?? 0
+        self.briefDesc = (dict["briefDesc"] as? String) ?? ""
+        var intro: [(title: String, text: String)] = []
+        if let arr = dict["introduction"] as? [[String: Any]] {
+            for it in arr {
+                let t = (it["ti"] as? String) ?? ""
+                let x = (it["txt"] as? String) ?? ""
+                if !t.isEmpty || !x.isEmpty { intro.append((t, x)) }
+            }
+        }
+        self.introduction = intro
+    }
+    /// 合并简介正文：一句话简介（briefDesc）+ 分段介绍（introduction）
+    var bioText: String {
+        var parts: [String] = []
+        if !briefDesc.isEmpty { parts.append(briefDesc) }
+        for (t, x) in introduction where !x.isEmpty {
+            parts.append((t.isEmpty ? "" : t + "\n") + x)
+        }
+        return parts.joined(separator: "\n\n")
+    }
+}
+
+struct ArtistDetailResp {
+    let code: Int
+    let artist: KBArtistDetail
+    let songs: [Song]
+    let albums: [ArtistAlbum]
+    let similar: [MiniArtist]
+    init(dict: [String: Any]) {
+        self.code = (dict["code"] as? Int) ?? 200
+        self.artist = KBArtistDetail(dict: dict["artist"] as? [String: Any] ?? [:])
+        self.songs = (dict["songs"] as? [[String: Any]] ?? []).map { Song(dict: $0) }
+        self.albums = (dict["albums"] as? [[String: Any]] ?? []).map { ArtistAlbum(dict: $0) }
+        self.similar = (dict["similar"] as? [[String: Any]] ?? []).map { MiniArtist(dict: $0) }
+    }
+}
+
+/// 收藏歌手列表（/api/ncm/artist/sublist），与网易云「关注」同步
+struct FavArtistListResp {
+    let ok: Bool
+    let artists: [MiniArtist]
+    let count: Int
+    init(dict: [String: Any]) {
+        self.ok = (dict["ok"] as? Bool) ?? false
+        self.artists = (dict["artists"] as? [[String: Any]] ?? []).map { MiniArtist(dict: $0) }
+        self.count = (dict["count"] as? Int) ?? self.artists.count
     }
 }
 
