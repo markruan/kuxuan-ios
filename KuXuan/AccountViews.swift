@@ -16,9 +16,7 @@ struct AccountCenterView: View {
     @EnvironmentObject var player: PlayerEngine
 
     @State private var showQR = false
-    @State private var service: ServiceStatus?
     @State private var infoMessage: String?
-    @State private var syncing = false
     @State private var showCreatePlaylist = false
     @State private var newPlaylistName = ""
     @State private var creating = false
@@ -28,36 +26,29 @@ struct AccountCenterView: View {
             List {
                 Section { profileHeader }
 
-                Section("我的音乐") { myMusicSection }
+                Section("我的收藏") { myFavSection }
+
+                Section("最近播放") { recentSection }
 
                 Section {
                     playlistSection
                 } header: {
                     Text("我的歌单")
                 } footer: {
-                    Text("歌单保存在网易云账号里，在网易云 App 也能看到。")
+                    Text("我创建的歌单保存在网易云账号里，在网易云 App 也能看到。")
                         .font(.caption2)
                 }
 
                 Section {
                     ncmSection
                 } header: {
-                    Text("网易云账号与同步")
+                    Text("网易云账号")
                 } footer: {
-                    Text("点 ♡ 收藏会写入网易云「我喜欢的音乐」并回查红心列表；未绑定时仅保存在本机。")
+                    Text("登录后，收藏的歌曲会保存到网易云「我喜欢的音乐」，也可新建与管理歌单。")
                         .font(.caption2)
                 }
 
                 Section("设置") { settingsSection }
-
-                Section {
-                    serviceSection
-                } header: {
-                    Text("服务状态")
-                } footer: {
-                    Text("服务已部署在云端，手机使用移动网络或 Wi-Fi 均可访问。")
-                        .font(.caption2)
-                }
             }
             .listStyle(.insetGrouped)
             .navigationTitle("个人中心")
@@ -91,8 +82,10 @@ struct AccountCenterView: View {
 
     private func load() async {
         await auth.refresh()
-        service = try? await APIClient.serviceStatus()
-        if auth.ncmBound { await player.syncFavsFromCloud() }
+        if auth.ncmBound {
+            await player.syncFavsFromCloud()
+            await player.syncFavArtistsFromCloud()
+        }
     }
 
     // MARK: 资料卡
@@ -114,23 +107,14 @@ struct AccountCenterView: View {
             .overlay(Circle().stroke(Color.white.opacity(0.6), lineWidth: 2))
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(auth.ncmProfile?.nickname ?? "未绑定网易云")
+                Text(auth.ncmProfile?.nickname ?? "未登录")
                     .font(.title3.bold()).lineLimit(1)
                 Text("UID \(auth.ncmProfile?.uid ?? "—")")
                     .font(.caption2).foregroundColor(.secondary)
-                statusBadge
             }
             Spacer()
         }
         .padding(.vertical, 6)
-    }
-
-    private var statusBadge: some View {
-        Text(auth.ncmBound ? "收藏同步已开启" : "未绑定 · 收藏仅存本机")
-            .font(.caption2)
-            .foregroundColor(.kxAccent)
-            .padding(.horizontal, 9).padding(.vertical, 4)
-            .background(Color.kxAccent.opacity(0.12), in: Capsule())
     }
 
     private var avatarURL: URL? {
@@ -138,16 +122,37 @@ struct AccountCenterView: View {
         return a.isEmpty ? nil : APIClient.proxiedPicURL(a)
     }
 
-    // MARK: 我的音乐
+    // MARK: 我的收藏（歌曲 / 歌单 / 歌手 三类聚合）
     @ViewBuilder
-    private var myMusicSection: some View {
+    private var myFavSection: some View {
         NavigationLink {
-            SongListPage(title: "我的收藏", songs: player.favSongs,
+            SongListPage(title: "收藏歌曲", songs: player.favSongs,
                          empty: "还没有收藏歌曲\n在播放页点 ♡ 即可收藏")
         } label: {
-            rowWithValue(KXLabel("我的收藏", icon: .heartFill),
+            rowWithValue(KXLabel("收藏歌曲", icon: .heartFill),
                          value: "\(player.favSongs.count) 首")
         }
+        NavigationLink {
+            PlaylistListPage(title: "收藏歌单",
+                             playlists: auth.ncmPlaylists.filter { $0.subscribed },
+                             empty: "还没有收藏歌单\n在歌单页点「收藏」即可")
+        } label: {
+            rowWithValue(KXLabel("收藏歌单", icon: .list),
+                         value: "\(auth.ncmPlaylists.filter { $0.subscribed }.count) 个")
+        }
+        NavigationLink {
+            ArtistFavPage()
+                .environmentObject(player)
+                .environmentObject(auth)
+        } label: {
+            rowWithValue(KXLabel("收藏歌手", icon: .person),
+                         value: "\(player.favArtists.count) 位")
+        }
+    }
+
+    // MARK: 最近播放
+    @ViewBuilder
+    private var recentSection: some View {
         NavigationLink {
             SongListPage(title: "最近播放", songs: player.history,
                          empty: "还没有播放记录")
@@ -175,31 +180,25 @@ struct AccountCenterView: View {
             Button("取消", role: .cancel) { newPlaylistName = "" }
             Button("创建") { Task { await createPlaylist() } }
         } message: {
-            Text("将在你已绑定的网易云账号里真实创建一个歌单。")
+            Text("将在你已连接的网易云账号里真实创建一个歌单。")
         }
 
         if !auth.ncmBound {
             Text("绑定网易云账号后，可在这里查看和创建歌单。")
                 .font(.caption).foregroundColor(.secondary)
-        } else if auth.ncmPlaylists.isEmpty {
+        } else if auth.ncmPlaylists.filter({ !$0.subscribed }).isEmpty {
             Text("还没有创建过歌单，点上方「新建网易云歌单」创建第一个。")
                 .font(.caption).foregroundColor(.secondary)
         } else {
-            ForEach(auth.ncmPlaylists) { pl in
+            // 我的歌单段只放「我创建的」(subscribed == false)；
+            // 「我收藏的歌单」(subscribed == true) 归到「我的收藏 → 收藏歌单」。
+            ForEach(auth.ncmPlaylists.filter { !$0.subscribed }) { pl in
                 NavigationLink(value: PlaylistRef(id: pl.id, name: pl.name, cover: pl.cover)) {
                     HStack(spacing: 10) {
                         KXCover(url: APIClient.proxiedPicURL(pl.cover))
                             .frame(width: 40, height: 40).cornerRadius(KXRadius.cover)
                         VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 4) {
-                                Text(pl.name).font(.subheadline).lineLimit(1)
-                                if pl.subscribed {
-                                    Text("收藏")
-                                        .font(.caption2).foregroundColor(.kxAccent)
-                                        .padding(.horizontal, 5).padding(.vertical, 1)
-                                        .background(Capsule().fill(Color.kxAccent.opacity(0.12)))
-                                }
-                            }
+                            Text(pl.name).font(.subheadline).lineLimit(1)
                             Text("\(pl.trackCount) 首 · \(pl.creator)")
                                 .font(.caption2).foregroundColor(.secondary).lineLimit(1)
                         }
@@ -228,68 +227,33 @@ struct AccountCenterView: View {
         creating = false
     }
 
-    // MARK: 网易云账号与同步
+    // MARK: 网易云账号
     @ViewBuilder
     private var ncmSection: some View {
         HStack(spacing: 10) {
             KXIcon(icon: auth.ncmBound ? .checkCircle : .person,
                    size: 19, color: .kxAccent)
             VStack(alignment: .leading, spacing: 2) {
-                Text(auth.ncmBound ? "已绑定 · \(auth.ncmProfile?.nickname ?? "网易云")" : "尚未绑定")
+                Text(auth.ncmBound ? (auth.ncmProfile?.nickname ?? "网易云") : "未连接网易云")
                     .font(.subheadline.bold())
-                Text(auth.ncmBound ? "收藏、歌单与云端保持同步" : "扫码后可同步收藏并管理歌单")
+                Text(auth.ncmBound ? "已登录" : "扫码登录后可收藏并管理歌单")
                     .font(.caption2).foregroundColor(.secondary)
             }
             Spacer()
         }
 
         Button { showQR = true } label: {
-            KXLabel(auth.ncmBound ? "切换账号 / 重新扫码" : "扫码绑定网易云", icon: .qr)
-        }
-
-        rowWithValue(KXLabel("收藏同步", icon: .sync), value: cloudFavText,
-                     highlight: auth.ncmBound)
-
-        Button {
-            Task { await refreshCloudFavs() }
-        } label: {
-            HStack {
-                KXLabel("立即核对云端红心", icon: .refresh)
-                Spacer()
-                if syncing { ProgressView().scaleEffect(0.7) }
-            }
+            KXLabel(auth.ncmBound ? "切换账号 / 重新扫码" : "扫码登录网易云", icon: .qr)
         }
 
         Button(role: .destructive) {
             Task {
                 await auth.unbindNCM()
-                infoMessage = "已解绑网易云账号，收藏将仅保存在本机"
+                infoMessage = "已退出网易云账号，收藏仅保存在本机"
             }
         } label: {
-            KXLabel("解绑网易云", icon: .unlink)
+            KXLabel("退出网易云账号", icon: .unlink)
         }
-    }
-
-    @MainActor
-    private func refreshCloudFavs() async {
-        guard auth.ncmBound else {
-            infoMessage = "请先扫码绑定网易云账号，才能读取云端红心"
-            return
-        }
-        syncing = true
-        await player.syncFavsFromCloud()
-        syncing = false
-        if let n = player.cloudFavCount {
-            infoMessage = "已从网易云读取 \(n) 首红心歌曲，并合并到「我的收藏」"
-        } else {
-            infoMessage = "云端红心读取失败，本地收藏保持不变：\(player.favSyncError ?? "未知原因")"
-        }
-    }
-
-    private var cloudFavText: String {
-        guard auth.ncmBound else { return "仅本机" }
-        if let n = player.cloudFavCount { return "云端红心 \(n) 首" }
-        return "待核对"
     }
 
     // MARK: 设置
@@ -309,19 +273,6 @@ struct AccountCenterView: View {
 
     // MARK: 服务状态
     @ViewBuilder
-    private var serviceSection: some View {
-        if let s = service {
-            rowWithValue(KXLabel("本地曲库", icon: .note), value: "\(s.library) 首")
-            rowWithValue(KXLabel("上游音源", icon: .network), value: s.onlineApi)
-        } else {
-            Text("服务状态读取失败，请确认后端服务正在运行")
-                .font(.caption).foregroundColor(.secondary)
-        }
-        if let e = auth.lastError {
-            Text(e).font(.caption2).foregroundColor(.secondary)
-        }
-    }
-
     /// 统一的「图标 + 标题 + 右侧值」行：委托给 KXListRow，与个人中心 / 设置共用同一套样式。
     private func rowWithValue(_ label: KXLabel, value: String,
                               highlight: Bool = false) -> some View {
@@ -370,7 +321,7 @@ struct NCMQRView: View {
                 if auth.qrBound {
                     HStack(spacing: 6) {
                         KXIcon(icon: .checkCircle, size: 17, color: .kxAccent)
-                        Text("已绑定 \(auth.ncmProfile?.nickname ?? "网易云账号")")
+                        Text("已连接网易云 · \(auth.ncmProfile?.nickname ?? "网易云账号")")
                             .foregroundColor(.kxAccent)
                     }
                     Button("完成") { dismiss() }
@@ -470,6 +421,88 @@ struct SongListPage: View {
             }
         }
         .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .kxBackBar()
+    }
+}
+
+// MARK: - 收藏歌单列表（「我的收藏 → 收藏歌单」进入，仅展示已收藏的歌单）
+struct PlaylistListPage: View {
+    let title: String
+    let playlists: [NCMPlaylist]
+    let empty: String
+
+    var body: some View {
+        Group {
+            if playlists.isEmpty {
+                VStack(spacing: 14) {
+                    KXIcon(icon: .list, size: 42, color: .secondary)
+                    Text(empty).font(.subheadline).foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(30)
+            } else {
+                List(playlists) { pl in
+                    NavigationLink(value: PlaylistRef(id: pl.id, name: pl.name, cover: pl.cover)) {
+                        HStack(spacing: 10) {
+                            KXCover(url: APIClient.proxiedPicURL(pl.cover))
+                                .frame(width: 44, height: 44).cornerRadius(KXRadius.cover)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(pl.name).font(.subheadline).lineLimit(1)
+                                Text("\(pl.trackCount) 首 · \(pl.creator)")
+                                    .font(.caption2).foregroundColor(.secondary).lineLimit(1)
+                            }
+                            Spacer()
+                            Text("\(pl.trackCount)").font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .listStyle(.plain)
+            }
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .kxBackBar()
+    }
+}
+
+// MARK: - 收藏歌手列表（「我的收藏 → 收藏歌手」进入，点选打开歌手页）
+struct ArtistFavPage: View {
+    @EnvironmentObject var player: PlayerEngine
+    @EnvironmentObject var auth: AuthStore
+
+    var body: some View {
+        Group {
+            if player.favArtists.isEmpty {
+                VStack(spacing: 14) {
+                    KXIcon(icon: .person, size: 42, color: .secondary)
+                    Text("还没有收藏歌手\n在歌手页点 ♡ 即可收藏").font(.subheadline).foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(30)
+            } else {
+                List(player.favArtists) { a in
+                    Button {
+                        // 打开歌手页（RootView 全屏浮层承接）
+                        player.artistToShow = a
+                    } label: {
+                        HStack(spacing: 12) {
+                            KXCover(url: APIClient.coverURL(a.cover, size: 120))
+                                .frame(width: 44, height: 44).clipShape(Circle())
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(a.name).font(.subheadline).lineLimit(1)
+                                Text("已收藏歌手").font(.caption).foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            KXIcon(icon: .heartFill, size: 16, color: .kxAccent)
+                        }
+                    }
+                    .foregroundColor(.primary)
+                }
+                .listStyle(.plain)
+            }
+        }
+        .navigationTitle("收藏歌手")
         .navigationBarTitleDisplayMode(.inline)
         .kxBackBar()
     }
