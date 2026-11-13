@@ -79,9 +79,13 @@ extension View {
 /// 文案由 PlayerEngine 统一产生并在约 2.8s 后自动清空，这里只负责展示。
 struct FavSyncToast: View {
     @EnvironmentObject var player: PlayerEngine
+    /// 收藏歌手的提示优先（其语义与歌曲收藏一致，只是对象不同），其次才是歌曲收藏。
+    private var message: String? {
+        player.favArtistNotice ?? player.favNotice
+    }
     var body: some View {
         Group {
-            if let msg = player.favNotice {
+            if let msg = message {
                 HStack(spacing: 7) {
                     KXIcon(icon: msg.contains("失败") ? .warning : .cloudCheck,
                            size: 15, color: .white)
@@ -93,7 +97,7 @@ struct FavSyncToast: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .animation(.easeInOut(duration: 0.25), value: player.favNotice)
+        .animation(.easeInOut(duration: 0.25), value: message)
     }
 }
 
