@@ -14,6 +14,11 @@ struct AccountCenterView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject var auth: AuthStore
     @EnvironmentObject var player: PlayerEngine
+    /// 关闭整个「个人中心」sheet 的回调（由 HomeView 用 showAccount=false 传入）。
+    /// 注意：从被 push 进来的 ArtistFavPage 里直接调用 @Environment(.dismiss) 只会 pop 掉
+    /// 导航层级、关不掉 sheet，导致歌手页 fullScreenCover 与 sheet 同层冲突（闪屏/返回落错页）。
+    /// 因此点歌手必须用这个回调关掉 sheet（与 SearchSheet 用 showSearch=false 是同一套可靠机制）。
+    let onClose: () -> Void
 
     @State private var showQR = false
     @State private var infoMessage: String?
@@ -119,7 +124,7 @@ struct AccountCenterView: View {
 
     private var avatarURL: URL? {
         let a = auth.ncmProfile?.avatar ?? ""
-        return a.isEmpty ? nil : APIClient.proxiedPicURL(a)
+        return a.isEmpty ? nil : APIClient.proxiedPicURL(a, size: 160)
     }
 
     // MARK: 我的收藏（歌曲 / 歌单 / 歌手 三类聚合）
@@ -141,7 +146,9 @@ struct AccountCenterView: View {
         }
         NavigationLink {
             ArtistFavPage(onOpenArtist: { a in
-                dismiss()
+                // 先关掉整个「个人中心」sheet（走 HomeView 的绑定，可靠地 dismiss sheet），
+                // 再打开歌手页（RootView 全屏浮层承接）。与 SearchSheet 点歌手的范式一致。
+                onClose()
                 player.artistToShow = MiniArtist(id: a.id, name: a.name, cover: a.cover)
             })
             .environmentObject(player)
@@ -197,7 +204,7 @@ struct AccountCenterView: View {
             ForEach(auth.ncmPlaylists.filter { !$0.subscribed }) { pl in
                 NavigationLink(value: PlaylistRef(id: pl.id, name: pl.name, cover: pl.cover)) {
                     HStack(spacing: 10) {
-                        KXCover(url: APIClient.proxiedPicURL(pl.cover))
+                        KXCover(url: APIClient.proxiedPicURL(pl.cover, size: 100))
                             .frame(width: 40, height: 40).cornerRadius(KXRadius.cover)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(pl.name).font(.subheadline).lineLimit(1)
@@ -454,7 +461,7 @@ struct PlaylistListPage: View {
                 List(playlists) { pl in
                     NavigationLink(value: PlaylistRef(id: pl.id, name: pl.name, cover: pl.cover)) {
                         HStack(spacing: 10) {
-                            KXCover(url: APIClient.proxiedPicURL(pl.cover))
+                            KXCover(url: APIClient.proxiedPicURL(pl.cover, size: 120))
                                 .frame(width: 44, height: 44).cornerRadius(KXRadius.cover)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(pl.name).font(.subheadline).lineLimit(1)
