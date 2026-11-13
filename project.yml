@@ -28,6 +28,7 @@ targets:
       - path: KuXuan/QueueSheet.swift
       - path: KuXuan/MiniPlayer.swift
       - path: KuXuan/SettingsView.swift
+      - path: KuXuan/ArtistView.swift
       # App 图标：不用 Assets.xcassets（本机 Xcode 缺 iOS 17.2 模拟器运行时，
       # actool 编译单张 1024 通用图标会报 Failed to locate any simulator runtime）。
       # 改为各尺寸 PNG 直接进 bundle，由 Info.plist 的 CFBundleIconFiles 声明。
