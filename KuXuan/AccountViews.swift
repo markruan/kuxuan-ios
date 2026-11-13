@@ -71,9 +71,12 @@ struct AccountCenterView: View {
             .sheet(isPresented: $showQR) {
                 NCMQRView().environmentObject(auth)
             }
-            .navigationDestination(for: PlaylistRef.self) { ref in
-                PlaylistView(ref: ref)
-            }
+            // 故意不注册 navigationDestination(for: PlaylistRef.self)：
+            // 值驱动 destination 若只挂在根 List 上，从被 push 的第二层页面（收藏歌单列表）
+            // 触发 NavigationLink(value:) 会解析不到 destination，跳转被挂起，
+            // 直到 pop 回根 List 才补执行 —— 即用户反馈的「点歌单闪一下没反应、退出列表才出来」。
+            // 个人中心内所有歌单入口统一改用 NavigationLink { PlaylistView(...) } 闭包形式
+            // （与搜索页歌单一致），点击即 push，不依赖 destination 注册层级。
             .alert("提示", isPresented: Binding<Bool>(
                 get: { infoMessage != nil },
                 set: { if !$0 { infoMessage = nil } }
@@ -99,11 +102,8 @@ struct AccountCenterView: View {
             ZStack {
                 Circle().fill(LinearGradient.kx)
                 if let img = avatarURL {
-                    AsyncImage(url: img) { phase in
-                        if case .success(let im) = phase {
-                            im.resizable().scaledToFill().clipShape(Circle())
-                        }
-                    }
+                    KXCachedImage(url: img, placeholder: nil)
+                        .clipShape(Circle())
                 } else {
                     KXIcon(icon: .person, size: 30, color: .white)
                 }
@@ -202,7 +202,9 @@ struct AccountCenterView: View {
             // 我的歌单段只放「我创建的」(subscribed == false)；
             // 「我收藏的歌单」(subscribed == true) 归到「我的收藏 → 收藏歌单」。
             ForEach(auth.ncmPlaylists.filter { !$0.subscribed }) { pl in
-                NavigationLink(value: PlaylistRef(id: pl.id, name: pl.name, cover: pl.cover)) {
+                NavigationLink {
+                    PlaylistView(ref: PlaylistRef(id: pl.id, name: pl.name, cover: pl.cover))
+                } label: {
                     HStack(spacing: 10) {
                         KXCover(url: APIClient.proxiedPicURL(pl.cover, size: 100))
                             .frame(width: 40, height: 40).cornerRadius(KXRadius.cover)
@@ -436,6 +438,11 @@ struct SongListPage: View {
 }
 
 // MARK: - 收藏歌单列表（「我的收藏 → 收藏歌单」进入，仅展示已收藏的歌单）
+// 两处历史坑都已修：
+//  1) 列表曾在进入瞬间把歌单数组快照成静态 let，未拉完则恒空、要退出重进才显示
+//     → 改为从 auth 实时计算过滤。
+//  2) 点歌单曾用 NavigationLink(value:) 值驱动，而 destination 只注册在个人中心根 List 上，
+//     第二层页面解析不到、跳转挂起，要 pop 回列表才补执行 → 改为闭包型 NavigationLink。
 struct PlaylistListPage: View {
     @EnvironmentObject var auth: AuthStore
     let title: String
@@ -459,7 +466,12 @@ struct PlaylistListPage: View {
                 .padding(30)
             } else {
                 List(playlists) { pl in
-                    NavigationLink(value: PlaylistRef(id: pl.id, name: pl.name, cover: pl.cover)) {
+                    // 闭包型 destination：点击立即 push 歌单详情。
+                    // 不能用 NavigationLink(value:)：destination 只注册在个人中心根 List 上，
+                    // 第二层页面触发时解析不到，跳转会挂起直到 pop 回列表才执行（闪屏/延迟）。
+                    NavigationLink {
+                        PlaylistView(ref: PlaylistRef(id: pl.id, name: pl.name, cover: pl.cover))
+                    } label: {
                         HStack(spacing: 10) {
                             KXCover(url: APIClient.proxiedPicURL(pl.cover, size: 120))
                                 .frame(width: 44, height: 44).cornerRadius(KXRadius.cover)
