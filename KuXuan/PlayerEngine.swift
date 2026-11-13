@@ -22,6 +22,13 @@ final class PlayerEngine: ObservableObject {
     @Published var favs: Set<String> = []
     @Published var favSongs: [Song] = []      // 完整歌曲对象，供「我的收藏」列表展示/播放
     @Published var history: [Song] = []
+    /// 待打开的歌手页（任意位置点歌手名/头像都会设置它，由 RootView 的 fullScreenCover 承接）
+    @Published var artistToShow: MiniArtist?
+    /// 收藏（关注）的歌手，与网易云「关注」同步；本地缓存保证离线也能展示
+    @Published var favArtists: [MiniArtist] = []
+    private var favArtistSet: Set<String> = []
+    /// 收藏歌手的短提示（成功 / 未连接 / 失败回滚）
+    @Published var favArtistNotice: String?
     /// 收藏云同步的短提示（成功 / 未绑定 / 失败回滚），由 UI 以浮层展示，约 2.8s 自动消失
     @Published var favNotice: String?
     /// 网易云账号里真实存在的红心数量（nil = 尚未成功读取过）
@@ -47,7 +54,7 @@ final class PlayerEngine: ObservableObject {
 
     // MARK: - 生命周期
     init() {
-        loadFavs(); loadFavSongs(); loadHistory()
+        loadFavs(); loadFavSongs(); loadHistory(); loadFavArtists()
         let iv = CMTime(seconds: 0.5, preferredTimescale: 600)
         timeToken = player.addPeriodicTimeObserver(forInterval: iv, queue: .main) { [weak self] t in
             guard let s = self else { return }
@@ -210,11 +217,9 @@ final class PlayerEngine: ObservableObject {
                 let verified = try await APIClient.ncmLike(songID: ncmID, like: willFav)
                 await MainActor.run {
                     if willFav {
-                        showFavNotice(verified ? "已写入网易云红心 · 云端已核对"
-                                               : "已写入网易云红心 · 云端列表待刷新")
+                        showFavNotice("已收藏到网易云")
                     } else {
-                        showFavNotice(verified ? "已取消网易云红心 · 云端已核对"
-                                               : "已取消网易云红心 · 云端列表待刷新")
+                        showFavNotice("已取消网易云收藏")
                     }
                     if let n = cloudFavCount {
                         cloudFavCount = max(0, n + (willFav ? 1 : -1))
@@ -225,7 +230,7 @@ final class PlayerEngine: ObservableObject {
                 await MainActor.run {
                     if msg.contains("尚未绑定") || msg.contains("NOT_BOUND") {
                         // 未绑定：本地收藏照常保留，只是不上传
-                        showFavNotice("仅保存在本机 · 未绑定网易云")
+                        showFavNotice("仅保存在本机")
                     } else {
                         // 远端明确失败：回滚本地，避免两端状态长期不一致
                         applyFav(song, liked: !willFav)
@@ -288,6 +293,84 @@ final class PlayerEngine: ObservableObject {
     }
 
     func isFav(_ id: String) -> Bool { favs.contains(id) }
+
+    // MARK: - 收藏歌手（同步网易云关注）
+    func isFavArtist(_ id: String) -> Bool { favArtistSet.contains(id) }
+
+    /// 收藏 / 取消收藏歌手：真实写入网易云「关注」。乐观更新本地，再回写云端；
+    /// 失败则回滚并提示（未连接网易云时明确引导去个人中心连接）。
+    func toggleFavArtist(_ artist: MiniArtist) {
+        let willFav = !isFavArtist(artist.id)
+        applyFavArtist(artist, fav: willFav)
+        Task {
+            do {
+                if willFav {
+                    _ = try await APIClient.artistSub(id: artist.id)
+                    await MainActor.run { showFavArtistNotice("已关注歌手") }
+                } else {
+                    _ = try await APIClient.artistUnsub(id: artist.id)
+                    await MainActor.run { showFavArtistNotice("已取消关注") }
+                }
+            } catch {
+                let msg = error.localizedDescription
+                await MainActor.run {
+                    applyFavArtist(artist, fav: !willFav)   // 回滚本地状态
+                    if msg.contains("尚未绑定") || msg.contains("NOT_BOUND") {
+                        showFavArtistNotice("请先在个人中心连接网易云")
+                    } else {
+                        showFavArtistNotice("操作失败：\(msg)")
+                    }
+                }
+            }
+        }
+    }
+
+    /// 从网易云拉取真实关注列表，合并进本地收藏歌手（只增不减，避免覆盖本地缓存）。
+    func syncFavArtistsFromCloud() async {
+        do {
+            let list = try await APIClient.artistSublist()
+            await MainActor.run {
+                for a in list where !favArtistSet.contains(a.id) {
+                    favArtists.append(a); favArtistSet.insert(a.id)
+                }
+                saveFavArtists()
+            }
+        } catch {
+            // 网络/解析失败不改动本地数据，保持上次成功的缓存
+        }
+    }
+
+    private func applyFavArtist(_ artist: MiniArtist, fav: Bool) {
+        if fav {
+            guard !favArtistSet.contains(artist.id) else { return }
+            favArtists.insert(artist, at: 0); favArtistSet.insert(artist.id)
+        } else {
+            guard favArtistSet.contains(artist.id) else { return }
+            favArtists.removeAll { $0.id == artist.id }; favArtistSet.remove(artist.id)
+        }
+        saveFavArtists()
+    }
+
+    private func showFavArtistNotice(_ text: String) {
+        Task { @MainActor in
+            favArtistNotice = text
+            try? await Task.sleep(nanoseconds: 2_800_000_000)
+            if favArtistNotice == text { favArtistNotice = nil }
+        }
+    }
+
+    private func loadFavArtists() {
+        guard let d = UserDefaults.standard.data(forKey: "kuxuan_fav_artists"),
+              let arr = try? JSONSerialization.jsonObject(with: d) as? [[String: Any]] else { return }
+        let list = arr.map { MiniArtist(dict: $0) }
+        favArtists = list; favArtistSet = Set(list.map { $0.id })
+    }
+    private func saveFavArtists() {
+        let arr = favArtists.map { ["id": $0.id, "name": $0.name, "cover": $0.cover] }
+        if let d = try? JSONSerialization.data(withJSONObject: arr) {
+            UserDefaults.standard.set(d, forKey: "kuxuan_fav_artists")
+        }
+    }
 
     // MARK: - 播放失败兜底
     /// 当前曲目无法播放（版权/网络受限/上游 451）时调用：
@@ -430,7 +513,8 @@ final class PlayerEngine: ObservableObject {
 
 extension Song {
     func toDict() -> [String: Any] {
-        ["id": id, "file": file, "title": title, "artist": artist, "album": album,
-         "duration": duration, "hasLyric": hasLyric, "cover": cover, "picUrl": picUrl, "online": online]
+        ["id": id, "file": file, "title": title, "artist": artist, "artistId": artistId,
+         "album": album, "duration": duration, "hasLyric": hasLyric, "cover": cover,
+         "picUrl": picUrl, "online": online]
     }
 }
