@@ -394,7 +394,9 @@ struct FullPlayer: View {
         }
         .sheet(isPresented: $showMore) {
             // sheet 不自动继承 @EnvironmentObject，必须显式注入
-            SongInfoSheet(song: song).environmentObject(auth)
+            SongInfoSheet(song: song)
+                .environmentObject(player)
+                .environmentObject(auth)
         }
         .fullScreenCover(isPresented: $showFullLyrics) {
             Group {
@@ -456,7 +458,14 @@ struct FullPlayer: View {
                 Text("正在播放").font(.caption).opacity(0.75)
                 Text(song?.title ?? "—").font(.subheadline.bold()).lineLimit(1)
                 if let a = song?.artist, !a.isEmpty {
-                    Text(a).font(.caption2).opacity(0.6).lineLimit(1)
+                    Button {
+                        // 歌手名可点：打开歌手页（需有artistId才能定位到具体歌手）
+                        guard let aid = song?.artistId, !aid.isEmpty else { return }
+                        player.artistToShow = MiniArtist(id: aid, name: a, cover: song?.cover ?? "")
+                    } label: {
+                        Text(a).font(.caption2).opacity(0.6).lineLimit(1)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -1968,6 +1977,7 @@ struct BounceLyricsView: View {
 struct SongInfoSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var auth: AuthStore
+    @EnvironmentObject var player: PlayerEngine
     let song: Song?
     @State private var quality: String = "检测中…"
     @State private var commentCount: Int?
@@ -1982,7 +1992,8 @@ struct SongInfoSheet: View {
             Form {
                 Section {
                     infoRow("标题", song?.title ?? "—")
-                    infoRow("艺术家", song?.artist ?? "—")
+                    // 艺术家可点：关闭本页并打开歌手页
+                    artistRow
                     infoRow("专辑", (song?.album ?? "").isEmpty ? "—" : (song?.album ?? "—"))
                     infoRow("时长", song.map { fmtDuration($0.duration) } ?? "—")
                     infoRow("网易云 ID", song?.ncmID ?? "—")
@@ -2037,7 +2048,7 @@ struct SongInfoSheet: View {
                                 Task { await createPlaylist(addCurrentSong: true) }
                             }
                         } message: {
-                            Text("会在已绑定的网易云账号里真实创建歌单；选「创建并加入这首歌」会再写入当前歌曲。")
+                            Text("会在已连接的网易云账号里真实创建歌单；选「创建并加入这首歌」会再写入当前歌曲。")
                         }
                     }
                     if !auth.ncmBound {
@@ -2096,6 +2107,29 @@ struct SongInfoSheet: View {
                 Button("好", role: .cancel) { }
             } message: {
                 Text(addNotice ?? "")
+            }
+        }
+    }
+
+    /// 艺术家行：可点击打开歌手页（先关掉本信息页，再交由 RootView 的全屏浮层承接）
+    private var artistRow: some View {
+        HStack {
+            Text("艺术家").font(.footnote)
+            Spacer()
+            if let a = song?.artist, !a.isEmpty {
+                Button {
+                    guard let aid = song?.artistId, !aid.isEmpty else { return }
+                    dismiss()
+                    player.artistToShow = MiniArtist(id: aid, name: a, cover: song?.cover ?? "")
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(a).font(.caption).foregroundColor(.kxAccent).lineLimit(1)
+                        KXIcon(icon: .chevron, size: 12, color: .kxAccent)
+                    }
+                }
+                .buttonStyle(.plain)
+            } else {
+                Text("—").font(.caption).foregroundColor(.secondary)
             }
         }
     }
