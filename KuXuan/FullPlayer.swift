@@ -50,6 +50,44 @@ fileprivate func dismissLyricsToPortrait(dismiss: @escaping () -> Void) {
     dismiss()
 }
 
+/// 全屏歌词「控件栏」（返回按钮等）自动隐藏 + 右滑返回上一页：
+/// 进入后 5 秒淡出；点击屏幕任意位置立即重新显示并重置 5 秒计时；
+/// 全屏歌词「控件栏」（返回按钮等）自动隐藏：
+/// 进入后 5 秒淡出；点击屏幕任意位置立即重新显示并重置 5 秒计时。
+/// 用 simultaneousGesture 叠加在任意已有手势（滚动/逐行 seek/按钮）之上，互不干扰。
+/// （按需求：全屏歌词不启用右滑返回，避免与歌词竖滚/逐行 seek 冲突；返回靠按钮+点击重现。）
+fileprivate struct LyricsChromeAutoHide: ViewModifier {
+    @Binding var visible: Bool
+    @State private var hideTask: DispatchWorkItem?
+
+    func body(content: Content) -> some View {
+        content
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    withAnimation(.easeInOut(duration: 0.25)) { visible = true }
+                    scheduleHide()
+                }
+            )
+            .onAppear {
+                visible = true
+                scheduleHide()
+            }
+            .onDisappear {
+                hideTask?.cancel()
+                hideTask = nil
+            }
+    }
+
+    private func scheduleHide() {
+        hideTask?.cancel()
+        let task = DispatchWorkItem {
+            withAnimation(.easeInOut(duration: 0.3)) { visible = false }
+        }
+        hideTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: task)
+    }
+}
+
 /// 廉价「模糊封面背景」：在小尺寸(360pt)上先算小模糊，再放大铺满全屏。
 ///
 /// ⚠️ 关键稳定性修复：原先各样式直接对整屏高清图做 `blur(radius: 55~90)` + `scaleEffect(1.25~1.35)`，
@@ -323,6 +361,20 @@ struct FullPlayer: View {
                 .padding(.bottom, safeBottom + 8)
                 .padding(.horizontal, 20)
                 .frame(width: W, height: H, alignment: .top)
+                // 右滑返回（首页除外）：左边缘起始 + 横向主导才触发，
+                // 避免与封面上下切歌手势、进度条、歌词交互冲突。
+                .gesture(
+                    DragGesture(minimumDistance: 30, coordinateSpace: .local)
+                        .onEnded { value in
+                            if value.startLocation.x < 30,
+                               value.translation.width > 60,
+                               value.translation.width > abs(value.translation.height) {
+                                withAnimation(.easeInOut(duration: 0.28)) {
+                                    player.showFullPlayer = false
+                                }
+                            }
+                        }
+                )
             }
             .frame(width: W, height: H)
             .clipped()
@@ -722,6 +774,7 @@ struct FullScreenLyricsView: View {
     @State private var activeIndex: Int = -1
     @State private var tick: Double = 0
     @State private var tickTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
+    @State private var chromeVisible = true
 
     private var lines: [LyricLine] { player.lyrics }
     private var safeTop: CGFloat {
@@ -763,6 +816,7 @@ struct FullScreenLyricsView: View {
             recompute()
         }
         .onDisappear { setLyricsLandscape(false); setLyricsIdle(false) }
+        .modifier(LyricsChromeAutoHide(visible: $chromeVisible))
     }
 
     // MARK: 背景（复用全屏播放器同款模糊封面）
@@ -790,6 +844,9 @@ struct FullScreenLyricsView: View {
         .padding(.top, safeTop + 4)
         .padding(.leading, max(safeLeading + 16, 32))
         .padding(.trailing, 16)
+        .opacity(chromeVisible ? 1 : 0)
+        .allowsHitTesting(chromeVisible)
+        .animation(.easeInOut(duration: 0.3), value: chromeVisible)
     }
 
     // MARK: 歌词列表
@@ -935,6 +992,7 @@ struct VinylDiscLyricsView: View {
     @State private var activeIndex: Int = -1
     @State private var tick: Double = 0
     @State private var tickTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
+    @State private var chromeVisible = true
 
     private var lines: [LyricLine] { player.lyrics }
     private let rotationSeconds: Double = 20
@@ -979,6 +1037,7 @@ struct VinylDiscLyricsView: View {
             driveIndex()
         }
         .onDisappear { setLyricsLandscape(false); setLyricsIdle(false) }
+        .modifier(LyricsChromeAutoHide(visible: $chromeVisible))
     }
 
     private func findIndex(_ t: Double) -> Int {
@@ -1175,6 +1234,9 @@ private struct DiscArt: View {
         .foregroundColor(.white)
         .padding(.top, safeTop + 4)
         .padding(.leading, 16 + safeLeading)
+        .opacity(chromeVisible ? 1 : 0)
+        .allowsHitTesting(chromeVisible)
+        .animation(.easeInOut(duration: 0.3), value: chromeVisible)
     }
 }
 
@@ -1188,6 +1250,7 @@ struct AIDirectorLyricsView: View {
     @State private var activeIndex: Int = -1
     @State private var tick: Double = 0
     @State private var tickTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
+    @State private var chromeVisible = true
 
     private var lines: [LyricLine] { player.lyrics }
     private var safeTop: CGFloat { windowSafeInset(\.top) }
@@ -1216,6 +1279,7 @@ struct AIDirectorLyricsView: View {
             driveIndex()
         }
         .onDisappear { setLyricsLandscape(false); setLyricsIdle(false) }
+        .modifier(LyricsChromeAutoHide(visible: $chromeVisible))
     }
 
     private func findIndex(_ t: Double) -> Int {
@@ -1288,6 +1352,9 @@ struct AIDirectorLyricsView: View {
         .foregroundColor(.white)
         .padding(.top, safeTop + 4)
         .padding(.leading, 16 + safeLeading)
+        .opacity(chromeVisible ? 1 : 0)
+        .allowsHitTesting(chromeVisible)
+        .animation(.easeInOut(duration: 0.3), value: chromeVisible)
     }
 }
 
@@ -1437,6 +1504,7 @@ struct MiSideLyricsView: View {
     /// 稳定计时器：视图实例创建一次，避免内联 Timer.publish 在每次 body 重算时反复重订阅
     /// （此前下坠样式因此被 0.05s 高频重建拖垮渲染服务，整机重启）
     @State private var tickTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
+    @State private var chromeVisible = true
 
     private var lines: [LyricLine] { player.lyrics }
     private var groundRatio: CGFloat { 0.82 }
@@ -1466,6 +1534,7 @@ struct MiSideLyricsView: View {
             drive()
         }
         .onDisappear { fallTimer?.invalidate(); setLyricsLandscape(false); setLyricsIdle(false) }
+        .modifier(LyricsChromeAutoHide(visible: $chromeVisible))
     }
 
     private func stage(_ geo: GeometryProxy, spawnY: CGFloat, groundY: CGFloat) -> some View {
@@ -1640,6 +1709,9 @@ struct MiSideLyricsView: View {
         .foregroundColor(.white)
         .padding(.top, safeTop + 4)
         .padding(.horizontal, 16)
+        .opacity(chromeVisible ? 1 : 0)
+        .allowsHitTesting(chromeVisible)
+        .animation(.easeInOut(duration: 0.3), value: chromeVisible)
     }
 }
 
@@ -1652,6 +1724,7 @@ struct BounceLyricsView: View {
     @State private var activeIndex: Int = -1
     @State private var tick: Double = 0
     @State private var tickTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
+    @State private var chromeVisible = true
 
     private var lines: [LyricLine] { player.lyrics }
 
@@ -1676,21 +1749,26 @@ struct BounceLyricsView: View {
             drive()
         }
         .onDisappear { setLyricsLandscape(false); setLyricsIdle(false) }
+        .modifier(LyricsChromeAutoHide(visible: $chromeVisible))
     }
 
     private func stage(_ geo: GeometryProxy) -> some View {
-        VStack(spacing: 22) {
+        let isPortrait = geo.size.width < geo.size.height
+        let mainSize: CGFloat = isPortrait ? 28 : 33
+        VStack(spacing: isPortrait ? 18 : 30) {
             if activeIndex - 1 >= 0, activeIndex - 1 < lines.count {
-                lineText(lines[activeIndex - 1], emphasized: false)
-                    .opacity(0.32)
+                lineText(lines[activeIndex - 1], size: isPortrait ? 19 : 22)
+                    .opacity(isPortrait ? 0.26 : 0.34)
                     .scaleEffect(0.82)
             }
             if activeIndex >= 0, activeIndex < lines.count {
-                currentLine(lines[activeIndex])
+                currentLine(lines[activeIndex], fontSize: mainSize)
+                    // 竖版空间窄：给主歌词上下留白，避免与前后句挤在一起
+                    .padding(.vertical, isPortrait ? 10 : 16)
             }
             if activeIndex + 1 < lines.count {
-                lineText(lines[activeIndex + 1], emphasized: false)
-                    .opacity(0.2)
+                lineText(lines[activeIndex + 1], size: isPortrait ? 19 : 22)
+                    .opacity(isPortrait ? 0.16 : 0.22)
                     .scaleEffect(0.82)
             }
         }
@@ -1701,8 +1779,8 @@ struct BounceLyricsView: View {
         .animation(.easeInOut(duration: 0.3), value: activeIndex)
     }
 
-    private func currentLine(_ line: LyricLine) -> some View {
-        BounceLine(line: line, words: effectiveWords(for: line), tick: tick)
+    private func currentLine(_ line: LyricLine, fontSize: CGFloat = 30) -> some View {
+        BounceLine(line: line, words: effectiveWords(for: line), tick: tick, fontSize: fontSize)
     }
 
     // 没有逐字时间轴(yrc)的句子，按字符拆开并沿本句时长均匀分配时间，
@@ -1725,7 +1803,7 @@ struct BounceLyricsView: View {
         }
     }
 
-    private func lineText(_ line: LyricLine, emphasized: Bool) -> some View {
+    private func lineText(_ line: LyricLine, size: CGFloat = 22) -> some View {
         Group {
             if line.words.isEmpty {
                 Text(line.text.isEmpty ? "·" : line.text)
@@ -1733,10 +1811,10 @@ struct BounceLyricsView: View {
                 Text(line.words.map { $0.text }.joined())
             }
         }
-        .font(.system(size: emphasized ? 30 : 24, weight: emphasized ? .bold : .semibold))
+        .font(.system(size: size, weight: .semibold))
         .foregroundColor(.white)
         .lineLimit(nil)
-        .minimumScaleFactor(1.0)
+        .minimumScaleFactor(0.9)
         .fixedSize(horizontal: false, vertical: true)
         .multilineTextAlignment(.leading)
     }
@@ -1746,15 +1824,16 @@ struct BounceLyricsView: View {
         let line: LyricLine
         let words: [LyricWord]
         let tick: Double
+        var fontSize: CGFloat = 30
         @State private var entered = false
         var body: some View {
             VStack(spacing: 10) {
                 if words.isEmpty {
                     Text(line.text.isEmpty ? "·" : line.text)
-                        .font(.system(size: 30, weight: .bold))
+                        .font(.system(size: fontSize, weight: .bold))
                         .foregroundColor(.white)
                         .lineLimit(nil)
-                        .minimumScaleFactor(1.0)
+                        .minimumScaleFactor(0.85)
                         .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.center)
                 } else {
@@ -1766,7 +1845,7 @@ struct BounceLyricsView: View {
                             BounceWord(text: words[idx].text, appeared: tick >= words[idx].time)
                         }
                     }
-                    .font(.system(size: 30, weight: .bold))
+                    .font(.system(size: fontSize, weight: .bold))
                     .frame(maxWidth: .infinity, alignment: .center)
                     .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1779,27 +1858,30 @@ struct BounceLyricsView: View {
                         .multilineTextAlignment(.leading)
                 }
             }
-            .scaleEffect(entered ? 1 : 0.74)
-            .offset(y: entered ? 0 : 36)
+            // 常态即为放大态(scale 1)：入场只做轻微弹入，即使动画被打断也不会显得"没放大"
+            .scaleEffect(entered ? 1 : 0.92)
+            .offset(y: entered ? 0 : 24)
             .opacity(entered ? 1 : 0)
-            .blur(radius: entered ? 0 : 8)
-            .animation(.interpolatingSpring(stiffness: 280, damping: 17), value: entered)
-            .onAppear { DispatchQueue.main.async { entered = true } }
+            .blur(radius: entered ? 0 : 6)
+            .animation(.interpolatingSpring(stiffness: 300, damping: 20), value: entered)
+            .onAppear { entered = true }
         }
     }
 
-    // 逐字弹跳单元：到达其时间时弹性弹入（叠加在整句跳动之上）
+    // 逐字弹跳单元：到达其时间时弹性弹入（叠加在整句跳动之上）。
+    // 未唱到的字保持接近满尺寸、半透明，使整句主歌词始终以"放大态"完整呈现，
+    // 避免开局大片空白/缩成一团导致"没把主歌词放大"的观感。
     private struct BounceWord: View {
         let text: String
         let appeared: Bool
         @State private var shown = false
         var body: some View {
             Text(text)
-                .scaleEffect(shown ? 1 : 0.3)
-                .offset(y: shown ? 0 : 16)
-                .opacity(shown ? 1 : 0)
-                .blur(radius: shown ? 0 : 4)
-                .animation(.interpolatingSpring(stiffness: 380, damping: 14), value: shown)
+                .scaleEffect(shown ? 1 : 0.92)
+                .offset(y: shown ? 0 : 10)
+                .opacity(shown ? 1 : 0.32)
+                .blur(radius: shown ? 0 : 1.5)
+                .animation(.interpolatingSpring(stiffness: 380, damping: 15), value: shown)
                 .onChange(of: appeared) { if $0 { shown = true } }
                 .onAppear { if appeared { shown = true } }
         }
@@ -1876,6 +1958,9 @@ struct BounceLyricsView: View {
         .foregroundColor(.white)
         .padding(.top, safeTop + 4)
         .padding(.horizontal, 16)
+        .opacity(chromeVisible ? 1 : 0)
+        .allowsHitTesting(chromeVisible)
+        .animation(.easeInOut(duration: 0.3), value: chromeVisible)
     }
 }
 
