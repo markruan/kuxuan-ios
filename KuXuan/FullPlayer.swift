@@ -97,11 +97,8 @@ fileprivate struct LyricsChromeAutoHide: ViewModifier {
 fileprivate func blurredCoverBackground(url: URL?, size: CGSize) -> some View {
     Color.black
         .overlay(
-            AsyncImage(url: url) { phase in
-                if case .success(let img) = phase { img.resizable().scaledToFill() }
-                else { Color(white: 0.06) }
-            }
-            .frame(width: 360, height: 360)
+            KXCachedImage(url: url, placeholder: Color(white: 0.06))
+                .frame(width: 360, height: 360)
             .blur(radius: 14)
             .saturation(1.3)
             .brightness(-0.35)
@@ -389,7 +386,9 @@ struct FullPlayer: View {
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: player.showQueue)
         .sheet(isPresented: $showComments) {
             // 评论页要读网易云绑定态并发送评论，sheet 不会自动继承 EnvironmentObject
-            CommentSheet(songID: song?.file ?? "", songTitle: song?.title ?? "")
+            // 评论接口只认网易云数字歌曲 id（实测 online:347230 / stream 路径均 400 bad song id），
+            // file 是流与歌词的文件名，不能拿来当 songID。
+            CommentSheet(songID: song?.ncmID ?? "", songTitle: song?.title ?? "")
                 .environmentObject(auth)
         }
         .sheet(isPresented: $showMore) {
@@ -425,7 +424,7 @@ struct FullPlayer: View {
 
     // MARK: 背景
     private func backgroundLayer(_ W: CGFloat, _ H: CGFloat) -> some View {
-        blurredCoverBackground(url: APIClient.coverURL(song?.cover),
+        blurredCoverBackground(url: APIClient.coverURL(song?.cover, size: 720),
                               size: CGSize(width: W, height: H))
     }
 
@@ -497,7 +496,7 @@ struct FullPlayer: View {
             VStack(spacing: 14) {
                 Spacer(minLength: 0)
                 // 旋转状态收在独立子视图里，父级 FullPlayer.body 不再被定时器反复重算
-                RotatingAlbumCover(url: APIClient.coverURL(song?.cover),
+                RotatingAlbumCover(url: APIClient.coverURL(song?.cover, size: 720),
                                    isPlaying: player.isPlaying)
                     .frame(maxWidth: .infinity)
                 lyricPreview
@@ -830,7 +829,7 @@ struct FullScreenLyricsView: View {
 
     // MARK: 背景（复用全屏播放器同款模糊封面）
     private func backgroundLayer(_ size: CGSize) -> some View {
-        blurredCoverBackground(url: APIClient.coverURL(player.current?.cover), size: size)
+        blurredCoverBackground(url: APIClient.coverURL(player.current?.cover, size: 720), size: size)
         .clipped()
     }
 
@@ -1065,7 +1064,7 @@ struct VinylDiscLyricsView: View {
     }
 
     private func backgroundLayer(_ size: CGSize) -> some View {
-        blurredCoverBackground(url: APIClient.coverURL(player.current?.cover), size: size).opacity(0.22)
+        blurredCoverBackground(url: APIClient.coverURL(player.current?.cover, size: 720), size: size).opacity(0.22)
     }
 
     // MARK: 歌词（QQ 音乐式：当前句加粗高亮，前后随距离淡出缩小；翻译附于当前句下）
@@ -1156,7 +1155,7 @@ struct VinylDiscLyricsView: View {
 
     // MARK: 黑胶（已移除唱臂；旋转隔离到 VinylRotatingDisc 子视图，避免整页重绘抖动）
     private func discOnly(_ d: CGFloat) -> some View {
-        VinylRotatingDisc(d: d, coverURL: APIClient.coverURL(player.current?.cover))
+        VinylRotatingDisc(d: d, coverURL: APIClient.coverURL(player.current?.cover, size: 400))
     }
 
     // 唱臂已移除；唱片旋转隔离到下方 VinylRotatingDisc 子视图（消除整页重绘抖动）
@@ -1219,11 +1218,8 @@ private struct DiscArt: View {
                                      center: .center))
                 .frame(width: d, height: d)
             // 中心标贴（专辑封面）
-            AsyncImage(url: coverURL) { phase in
-                if case .success(let img) = phase { img.resizable().scaledToFill() }
-                else { Color(white: 0.16) }
-            }
-            .frame(width: d * coverPercent, height: d * coverPercent)
+            KXCachedImage(url: coverURL, placeholder: Color(white: 0.16))
+                .frame(width: d * coverPercent, height: d * coverPercent)
             .clipShape(Circle())
             .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: d * 0.012))
             // 中心孔
@@ -1691,7 +1687,7 @@ struct MiSideLyricsView: View {
     }
 
     private func backgroundLayer(_ size: CGSize) -> some View {
-        blurredCoverBackground(url: APIClient.coverURL(player.current?.cover), size: size)
+        blurredCoverBackground(url: APIClient.coverURL(player.current?.cover, size: 720), size: size)
     }
 
     private func shadeLayer(_ size: CGSize) -> some View {
@@ -1942,7 +1938,7 @@ struct BounceLyricsView: View {
     }
 
     private func backgroundLayer(_ size: CGSize) -> some View {
-        blurredCoverBackground(url: APIClient.coverURL(player.current?.cover), size: size)
+        blurredCoverBackground(url: APIClient.coverURL(player.current?.cover, size: 720), size: size)
     }
     private func shadeLayer(_ size: CGSize) -> some View {
         LinearGradient(colors: [.black.opacity(0.4), .black.opacity(0.75)],
@@ -2248,16 +2244,8 @@ private struct RotatingAlbumCover: View {
 
     @ViewBuilder
     private var albumImage: some View {
-        AsyncImage(url: url) { phase in
-            switch phase {
-            case .success(let img):
-                img.resizable().scaledToFill()
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(Color.white.opacity(0.28), lineWidth: 4))
-            default:
-                Color.white.opacity(0.12).clipShape(Circle())
-                    .overlay(Circle().stroke(Color.white.opacity(0.28), lineWidth: 4))
-            }
-        }
+        KXCachedImage(url: url, placeholder: Color.white.opacity(0.12))
+            .clipShape(Circle())
+            .overlay(Circle().stroke(Color.white.opacity(0.28), lineWidth: 4))
     }
 }
