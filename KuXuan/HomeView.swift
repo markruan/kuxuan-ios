@@ -75,12 +75,18 @@ struct HomeView: View {
         .task { await load(); await loadDaily() }
         .refreshable { await load(); await loadDaily() }
         .sheet(isPresented: $showSearch) {
-            SearchSheet(initialQuery: searchQuery) { songs, idx in
-                player.playSongs(songs, index: idx)
-                showSearch = false
-            }
-            .environmentObject(player)
-            .environmentObject(auth)
+            SearchSheet(initialQuery: searchQuery,
+                        onPlay: { songs, idx in
+                            player.playSongs(songs, index: idx)
+                            showSearch = false
+                        },
+                        onOpenArtist: { a in
+                            // 关闭搜索页，打开歌手页（RootView 全屏浮层承接）
+                            showSearch = false
+                            player.artistToShow = MiniArtist(id: a.id, name: a.name, cover: a.cover)
+                        })
+                .environmentObject(player)
+                .environmentObject(auth)
         }
         .sheet(isPresented: $showAccount) {
             AccountCenterView()
@@ -575,6 +581,8 @@ struct SearchSheet: View {
     @EnvironmentObject var auth: AuthStore
     let initialQuery: String
     let onPlay: ([Song], Int) -> Void
+    /// 点搜索结果里的歌手：由外部关闭搜索页并打开歌手页（RootView 全屏浮层承接）
+    let onOpenArtist: (NCMArtist) -> Void
 
     enum Tab: String, CaseIterable, Identifiable {
         case songs = "歌曲", artists = "歌手", playlists = "歌单"
@@ -696,8 +704,8 @@ struct SearchSheet: View {
             .listStyle(.plain)
         } else if tab == .artists {
             List(artists) { a in
-                NavigationLink {
-                    ArtistSongsView(artist: a)
+                Button {
+                    onOpenArtist(a)
                 } label: {
                     HStack(spacing: 12) {
                         ZStack {
@@ -711,9 +719,11 @@ struct SearchSheet: View {
                             Text("\(a.musicSize) 首单曲").font(.caption).foregroundColor(.secondary)
                         }
                         Spacer()
+                        KXIcon(icon: .chevron, size: 14, color: .secondary)
                     }
                 }
                 .foregroundColor(.primary)
+                .buttonStyle(.plain)
             }
             .listStyle(.plain)
         } else {
@@ -787,70 +797,3 @@ struct SearchSheet: View {
     }
 }
 
-// MARK: - 歌手热门歌曲页（搜索歌手后进入，展示并播放该歌手热门歌曲）
-struct ArtistSongsView: View {
-    @EnvironmentObject var player: PlayerEngine
-    let artist: NCMArtist
-    @State private var songs: [Song] = []
-    @State private var loading = true
-    @State private var err: String?
-
-    var body: some View {
-        Group {
-            if loading {
-                ProgressView("加载中…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let e = err {
-                VStack(spacing: 12) {
-                    KXIcon(icon: .warning, size: 40, color: .orange)
-                    Text(e).font(.subheadline).foregroundColor(.secondary)
-                        .multilineTextAlignment(.center).padding(.horizontal, 30)
-                    Button("重试") { Task { await load() } }
-                        .buttonStyle(.borderedProminent).tint(.kxAccent)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if songs.isEmpty {
-                VStack(spacing: 12) {
-                    KXIcon(icon: .note, size: 40, color: .secondary)
-                    Text("该歌手暂无可用歌曲").font(.subheadline).foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List(Array(songs.enumerated()), id: \.element.id) { i, s in
-                    Button { player.playSongs(songs, index: i) } label: {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                Color(.systemFill)
-                                KXCover(url: APIClient.coverURL(s.cover, size: 120))
-                            }
-                            .frame(width: 46, height: 46)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(s.title).font(.system(size: 15, weight: .medium)).lineLimit(1)
-                                Text(s.artist).font(.caption).foregroundColor(.secondary).lineLimit(1)
-                            }
-                            Spacer()
-                        }
-                    }
-                    .foregroundColor(.primary)
-                }
-                .listStyle(.plain)
-            }
-        }
-        .navigationTitle(artist.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .kxBackBar()
-        .task { await load() }
-    }
-
-    private func load() async {
-        loading = true; err = nil
-        do {
-            let (list, _) = try await APIClient.artistSongs(id: artist.id)
-            songs = list
-        } catch {
-            err = "歌手歌曲加载失败：\(error.localizedDescription)"
-        }
-        loading = false
-    }
-}
