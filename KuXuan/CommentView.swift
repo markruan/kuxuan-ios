@@ -206,11 +206,9 @@ struct CommentSheet: View {
             ZStack {
                 Circle().fill(LinearGradient.kxSoft)
                 if !c.avatar.isEmpty {
-                    AsyncImage(url: APIClient.proxiedPicURL(c.avatar, size: 80)) { phase in
-                        if case .success(let im) = phase {
-                            im.resizable().scaledToFill().clipShape(Circle())
-                        }
-                    }
+                    KXCachedImage(url: APIClient.proxiedPicURL(c.avatar, size: 80),
+                                  placeholder: nil)
+                        .clipShape(Circle())
                 } else {
                     KXIcon(icon: .person, size: 18, color: .kxAccent)
                 }
