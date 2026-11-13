@@ -201,6 +201,32 @@ struct APIClient {
         return (songs, artist)
     }
 
+    /// 歌手详情（中等丰富度）：/api/online/artist/<id>/detail
+    /// 返回头部信息 + 热门歌曲(50) + 专辑(12) + 相似歌手(12) + 简介。
+    static func artistDetail(id: String) async throws -> ArtistDetailResp {
+        ArtistDetailResp(dict: try await getJSON("/api/online/artist/" + id + "/detail"))
+    }
+
+    /// 收藏歌手 = 同步网易云「关注」。后端 /artist/sub 用 t=1 关注、t=0 取消，参数名 id。
+    /// 返回 true 表示已关注（写操作成功）。未连接网易云时后端会返回错误，由调用方提示。
+    static func artistSub(id: String) async throws -> Bool {
+        let t = Int(Date().timeIntervalSince1970 * 1000)
+        let d = try await getJSON("/api/ncm/artist/sub?id=\(kxQueryEncode(id))&_t=\(t)")
+        return d["subbed"] as? Bool ?? (d["ok"] as? Bool ?? false)
+    }
+
+    static func artistUnsub(id: String) async throws -> Bool {
+        let t = Int(Date().timeIntervalSince1970 * 1000)
+        let d = try await getJSON("/api/ncm/artist/unsub?id=\(kxQueryEncode(id))&_t=\(t)")
+        return d["subbed"] as? Bool ?? false
+    }
+
+    /// 已收藏（关注）的歌手列表，与网易云真实状态对齐。
+    static func artistSublist() async throws -> [MiniArtist] {
+        let d = try await getJSON("/api/ncm/artist/sublist")
+        return FavArtistListResp(dict: d).artists
+    }
+
     /// 可播性 / 码率 / 是否试听片段（后端 /api/online/resolve/<id>）
     static func resolve(songID: String) async throws -> ResolveResp {
         ResolveResp(dict: try await getJSON("/api/online/resolve/" + songID + "?level=" + audioQuality))
