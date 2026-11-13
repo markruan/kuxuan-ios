@@ -64,7 +64,7 @@ struct PlaylistView: View {
     // MARK: 封面 / 标题 / 操作
     private func headerBlock(_ d: PlaylistDetailResp, songs: [Song]) -> some View {
         VStack(spacing: 14) {
-            KXCover(url: APIClient.coverURL(d.info?.cover ?? ref.cover))
+            KXCover(url: APIClient.coverURL(d.info?.cover ?? ref.cover, size: 420))
                 .frame(width: 210, height: 210)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
