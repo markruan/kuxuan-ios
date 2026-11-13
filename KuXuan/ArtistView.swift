@@ -109,14 +109,14 @@ struct ArtistDetailContent: View {
         VStack(alignment: .leading, spacing: 22) {
             header
             actions
-            // 歌曲列表是歌手页的主体，紧跟在收藏/播放按钮之后、最优先展示
-            songSection
+            // 歌手简介放最前（可折叠），符合「简介 → 专辑 → 歌曲」的浏览顺序
+            if !bioText.isEmpty { bioSection }
             // 专辑（封面 + 专辑名，横向）
             if !albums.isEmpty { albumsSection }
             // 相似歌手（横向圆形头像，可点下钻到另一个歌手页）
             if !similar.isEmpty { similarSection }
-            // 歌手简介放最后，可折叠
-            if !bioText.isEmpty { bioSection }
+            // 热门歌曲列表紧随其后，作为歌手页主体
+            songSection
             Spacer(minLength: 60)
         }
         .padding(.horizontal, 16)
