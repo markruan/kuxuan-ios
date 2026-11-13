@@ -106,14 +106,18 @@ struct ArtistDetailContent: View {
     }
 
     private var bodyContent: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 22) {
             header
             actions
-            if !songs.isEmpty { hotSongsSection }
-            if !similar.isEmpty { similarSection }
+            // 歌曲列表是歌手页的主体，紧跟在收藏/播放按钮之后、最优先展示
+            songSection
+            // 专辑（封面 + 专辑名，横向）
             if !albums.isEmpty { albumsSection }
+            // 相似歌手（横向圆形头像，可点下钻到另一个歌手页）
+            if !similar.isEmpty { similarSection }
+            // 歌手简介放最后，可折叠
             if !bioText.isEmpty { bioSection }
-            Spacer(minLength: 50)
+            Spacer(minLength: 60)
         }
         .padding(.horizontal, 16)
         .padding(.top, 6)
@@ -173,31 +177,37 @@ struct ArtistDetailContent: View {
         }
     }
 
-    // MARK: 热门歌曲
-    private var hotSongsSection: some View {
+    // MARK: 热门歌曲（歌手页主体：始终展示，空时给占位，不隐藏「歌曲列表」区块）
+    private var songSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("热门歌曲")
-            LazyVStack(spacing: 4) {
-                ForEach(Array(songs.enumerated()), id: \.element.id) { i, s in
-                    Button {
-                        player.playSongs(songs, index: i)
-                        player.artistToShow = nil
-                    } label: {
-                        HStack(spacing: 12) {
-                            KXCover(url: APIClient.coverURL(s.cover, size: 120))
-                                .frame(width: 46, height: 46).cornerRadius(6)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(s.title).font(.system(size: 15, weight: .medium)).lineLimit(1)
-                                Text(s.artist).font(.caption).foregroundColor(.secondary).lineLimit(1)
+            sectionHeader("热门歌曲 \(songs.count)")
+            if songs.isEmpty {
+                Text("暂无热门歌曲")
+                    .font(.subheadline).foregroundColor(.secondary)
+                    .padding(.vertical, 6)
+            } else {
+                LazyVStack(spacing: 4) {
+                    ForEach(Array(songs.enumerated()), id: \.element.id) { i, s in
+                        Button {
+                            player.playSongs(songs, index: i)
+                            player.artistToShow = nil
+                        } label: {
+                            HStack(spacing: 12) {
+                                KXCover(url: APIClient.coverURL(s.cover, size: 120))
+                                    .frame(width: 46, height: 46).cornerRadius(6)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(s.title).font(.system(size: 15, weight: .medium)).lineLimit(1)
+                                    Text(s.artist).font(.caption).foregroundColor(.secondary).lineLimit(1)
+                                }
+                                Spacer()
+                                if player.current?.id == s.id {
+                                    KXIcon(icon: .wave, size: 17, color: .kxAccent)
+                                }
                             }
-                            Spacer()
-                            if player.current?.id == s.id {
-                                KXIcon(icon: .wave, size: 17, color: .kxAccent)
-                            }
+                            .foregroundColor(.primary)
                         }
-                        .foregroundColor(.primary)
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
