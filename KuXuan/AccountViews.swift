@@ -134,16 +134,18 @@ struct AccountCenterView: View {
         }
         NavigationLink {
             PlaylistListPage(title: "收藏歌单",
-                             playlists: auth.ncmPlaylists.filter { $0.subscribed },
                              empty: "还没有收藏歌单\n在歌单页点「收藏」即可")
         } label: {
             rowWithValue(KXLabel("收藏歌单", icon: .list),
                          value: "\(auth.ncmPlaylists.filter { $0.subscribed }.count) 个")
         }
         NavigationLink {
-            ArtistFavPage()
-                .environmentObject(player)
-                .environmentObject(auth)
+            ArtistFavPage(onOpenArtist: { a in
+                dismiss()
+                player.artistToShow = MiniArtist(id: a.id, name: a.name, cover: a.cover)
+            })
+            .environmentObject(player)
+            .environmentObject(auth)
         } label: {
             rowWithValue(KXLabel("收藏歌手", icon: .person),
                          value: "\(player.favArtists.count) 位")
@@ -428,9 +430,16 @@ struct SongListPage: View {
 
 // MARK: - 收藏歌单列表（「我的收藏 → 收藏歌单」进入，仅展示已收藏的歌单）
 struct PlaylistListPage: View {
+    @EnvironmentObject var auth: AuthStore
     let title: String
-    let playlists: [NCMPlaylist]
     let empty: String
+
+    /// 直接从 auth 实时读取并过滤「我收藏的歌单」，而不是在点进页面那一刻把
+    /// auth.ncmPlaylists 快照成静态数组——若当时歌单尚未拉取完，列表会一直是空，
+    /// 必须退出重进才显示（用户反馈的「收藏歌单打开看不到列表」）。
+    private var playlists: [NCMPlaylist] {
+        auth.ncmPlaylists.filter { $0.subscribed }
+    }
 
     var body: some View {
         Group {
@@ -470,6 +479,9 @@ struct PlaylistListPage: View {
 struct ArtistFavPage: View {
     @EnvironmentObject var player: PlayerEngine
     @EnvironmentObject var auth: AuthStore
+    /// 点歌手：由外部先关掉个人中心 sheet，再打开歌手页（RootView 全屏浮层承接）。
+    /// 否则 sheet 未关时 fullScreenCover 会被同层挡住，要等手动退出收藏页才弹出来。
+    let onOpenArtist: (MiniArtist) -> Void
 
     var body: some View {
         Group {
@@ -483,8 +495,7 @@ struct ArtistFavPage: View {
             } else {
                 List(player.favArtists) { a in
                     Button {
-                        // 打开歌手页（RootView 全屏浮层承接）
-                        player.artistToShow = a
+                        onOpenArtist(a)
                     } label: {
                         HStack(spacing: 12) {
                             KXCover(url: APIClient.coverURL(a.cover, size: 120))
