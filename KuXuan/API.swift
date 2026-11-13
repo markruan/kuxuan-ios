@@ -114,7 +114,11 @@ struct APIClient {
             let encoded = sizedInner.absoluteString
                 .addingPercentEncoding(withAllowedCharacters: allowed) ?? sizedInner.absoluteString
             var c = comps
-            c.queryItems = [URLQueryItem(name: "u", value: encoded)]
+            // 必须写 percentEncodedQuery（已编码串），不能写 queryItems：
+            // URLQueryItem 会把 value 里的 % 再编码成 %25，形成双重编码，
+            // 后端解出的 u 是字面串而非 URL → 400，首页推荐歌单/排行榜封面全白。
+            // 实测：一次编码 200 image/jpg 10993B，双重编码 400。
+            c.percentEncodedQuery = "u=" + encoded
             return c.url
         }
         // 3) 歌曲封面走后端 /api/online/cover/<id>：追加 ?param= 让后端降采样
@@ -132,17 +136,15 @@ struct APIClient {
         if u.hasPrefix("/") { return abs(u) }
         // 已是后端代理地址则走 coverURL 的降采样逻辑
         if u.contains("/api/online/pic?u=") { return coverURL(u, size: size) }
-        let encoded = u.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        // 两条分支统一用严格 unreserved 编码：.urlQueryAllowed 会放行 & = ? ，
+        // 上游 URL 自带 query 时会把代理 query 截断成多个参数，后端拿到半截 u → 400 白图。
+        let encoded = kxQueryEncode(u)
         guard let size = size, size > 0,
               let inner = URL(string: u), inner.host?.contains("126.net") == true,
               let sizedInner = with126Param(u, size) else {
             return abs("/api/online/pic?u=" + encoded)
         }
-        let allowed = CharacterSet(charactersIn:
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
-        let e2 = sizedInner.absoluteString
-            .addingPercentEncoding(withAllowedCharacters: allowed) ?? sizedInner.absoluteString
-        return abs("/api/online/pic?u=" + e2)
+        return abs("/api/online/pic?u=" + kxQueryEncode(sizedInner.absoluteString))
     }
 
     // MARK: - 通用请求（GET / POST + Bearer Token）
