@@ -86,24 +86,63 @@ struct APIClient {
         return URL(string: base + "/api/online/stream/" + f + "?level=" + audioQuality)
     }
 
-    /// 列表小缩略图无需拉原图。网易云 CDN（p*.music.126.net）支持 ?param=WyH
-    /// 服务端降采样，传 size 后追加该参数可大幅减少下载量、加速首屏。
+    /// 给 126.net 地址追加 ?param=WyH 服务端降采样参数（仅对 126.net 生效）。
+    private static func with126Param(_ urlString: String, _ size: Int) -> URL? {
+        guard let u = URL(string: urlString), u.host?.contains("126.net") == true else { return nil }
+        let sep = (u.query ?? "").isEmpty ? "?" : "&"
+        return URL(string: u.absoluteString + sep + "param=\(size)y\(size)")
+    }
+
+    /// 列表/详情封面：按显示尺寸请求对应大小的图，小图位不要拉原图（实测 196KB→3KB）。
+    /// 支持三类来源：
+    ///  1) 直接 126.net 地址 → 追加 ?param=WyH；
+    ///  2) 后端图片代理 /api/online/pic?u=<encoded 126.net> → 把 ?param= 注入上游 126.net 后再编码；
+    ///  3) 歌曲封面 /api/online/cover/<id> → 追加 ?param= 由后端降采样（需 server.py 配合）。
     static func coverURL(_ path: String?, size: Int? = nil) -> URL? {
         guard let u = abs(path) else { return nil }
         guard let size = size, size > 0 else { return u }
-        if u.host?.contains("126.net") == true {
+        // 1) 直接 126.net
+        if let direct = with126Param(u.absoluteString, size) { return direct }
+        // 2) 后端图片代理：把 ?param= 注入到上游 126.net 地址里再编码
+        if let comps = URLComponents(url: u, resolvingAgainstBaseURL: false),
+           let uItem = comps.queryItems?.first(where: { $0.name == "u" }),
+           let inner = uItem.value,
+           let innerURL = URL(string: inner),
+           let sizedInner = with126Param(innerURL.absoluteString, size) {
+            let allowed = CharacterSet(charactersIn:
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+            let encoded = sizedInner.absoluteString
+                .addingPercentEncoding(withAllowedCharacters: allowed) ?? sizedInner.absoluteString
+            var c = comps
+            c.queryItems = [URLQueryItem(name: "u", value: encoded)]
+            return c.url
+        }
+        // 3) 歌曲封面走后端 /api/online/cover/<id>：追加 ?param= 让后端降采样
+        if u.path.hasPrefix("/api/online/cover/") {
             let sep = (u.query ?? "").isEmpty ? "?" : "&"
             return URL(string: u.absoluteString + sep + "param=\(size)y\(size)")
         }
         return u
     }
 
-    /// 把网易云外链封面转成后端图片代理，避免 http 混合内容被拦
-    static func proxiedPicURL(_ urlString: String?) -> URL? {
+    /// 把网易云外链封面转成后端图片代理，避免 http 混合内容被拦。
+    /// 可传 size：对 126.net 上游会注入 ?param= 让后端去拉已降采样的版本。
+    static func proxiedPicURL(_ urlString: String?, size: Int? = nil) -> URL? {
         guard let u = urlString, !u.isEmpty else { return nil }
         if u.hasPrefix("/") { return abs(u) }
+        // 已是后端代理地址则走 coverURL 的降采样逻辑
+        if u.contains("/api/online/pic?u=") { return coverURL(u, size: size) }
         let encoded = u.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        return abs("/api/online/pic?u=" + encoded)
+        guard let size = size, size > 0,
+              let inner = URL(string: u), inner.host?.contains("126.net") == true,
+              let sizedInner = with126Param(u, size) else {
+            return abs("/api/online/pic?u=" + encoded)
+        }
+        let allowed = CharacterSet(charactersIn:
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        let e2 = sizedInner.absoluteString
+            .addingPercentEncoding(withAllowedCharacters: allowed) ?? sizedInner.absoluteString
+        return abs("/api/online/pic?u=" + e2)
     }
 
     // MARK: - 通用请求（GET / POST + Bearer Token）
