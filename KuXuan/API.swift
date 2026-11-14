@@ -129,7 +129,7 @@ struct APIClient {
         return u
     }
 
-    /// 把网易云外链封面转成后端图片代理，避免 http 混合内容被拦。
+    /// 把云村外链封面转成后端图片代理，避免 http 混合内容被拦。
     /// 可传 size：对 126.net 上游会注入 ?param= 让后端去拉已降采样的版本。
     static func proxiedPicURL(_ urlString: String?, size: Int? = nil) -> URL? {
         guard let u = urlString, !u.isEmpty else { return nil }
@@ -248,8 +248,8 @@ struct APIClient {
         ArtistDetailResp(dict: try await getJSON("/api/online/artist/" + id + "/detail"))
     }
 
-    /// 收藏歌手 = 同步网易云「关注」。后端 /artist/sub 用 t=1 关注、t=0 取消，参数名 id。
-    /// 返回 true 表示已关注（写操作成功）。未连接网易云时后端会返回错误，由调用方提示。
+    /// 收藏歌手 = 同步云村「关注」。后端 /artist/sub 用 t=1 关注、t=0 取消，参数名 id。
+    /// 返回 true 表示已关注（写操作成功）。未连接云村时后端会返回错误，由调用方提示。
     static func artistSub(id: String) async throws -> Bool {
         let t = Int(Date().timeIntervalSince1970 * 1000)
         let d = try await getJSON("/api/ncm/artist/sub?id=\(kxQueryEncode(id))&_t=\(t)")
@@ -262,7 +262,7 @@ struct APIClient {
         return d["subbed"] as? Bool ?? false
     }
 
-    /// 已收藏（关注）的歌手列表，与网易云真实状态对齐。
+    /// 已收藏（关注）的歌手列表，与云村真实状态对齐。
     static func artistSublist() async throws -> [MiniArtist] {
         let d = try await getJSON("/api/ncm/artist/sublist")
         return FavArtistListResp(dict: d).artists
@@ -322,7 +322,7 @@ struct APIClient {
                               body: ["oldPassword": old, "newPassword": new], auth: true)
     }
 
-    // MARK: - 网易云扫码登录 /api/ncm/*
+    // MARK: - 云村扫码登录 /api/ncm/*
     static func ncmMe() async throws -> NCMMeResp {
         NCMMeResp(dict: try await getJSON("/api/ncm/me"))
     }
@@ -354,7 +354,7 @@ struct APIClient {
         _ = try await getJSON("/api/ncm/unbind")
     }
 
-    /// 收藏同步：把红心 / 取消红心写入网易云「我喜欢的音乐」。
+    /// 收藏同步：把红心 / 取消红心写入云村「我喜欢的音乐」。
     /// 后端是 GET 路由，_t 时间戳用于绕过 URLSession / 代理缓存，避免连点被吞请求。
     /// 返回服务端写后回查 /likelist 的核对结果：true 表示云端红心列表已确认变化。
     static func ncmLike(songID: String, like: Bool) async throws -> Bool {
@@ -364,20 +364,20 @@ struct APIClient {
         return d["verified"] as? Bool ?? false
     }
 
-    /// 云端红心列表（含歌曲详情），用于把「我的收藏」与网易云真实状态对齐
+    /// 云端红心列表（含歌曲详情），用于把「我的收藏」与云村真实状态对齐
     static func ncmLikeList() async throws -> NCMLikeListResp {
         NCMLikeListResp(dict: try await getJSON("/api/ncm/likelist"))
     }
 
-    /// 网易云每日歌曲推荐（已绑定账号走个性化推荐，否则走上游默认推荐）。
+    /// 云村每日歌曲推荐（已绑定账号走个性化推荐，否则走上游默认推荐）。
     /// 返回统一 Song 列表，可直接交给播放器播放。
     static func ncmDailyRecommend() async throws -> [Song] {
         let d = try await getJSON("/api/ncm/recommend/songs")
         return (d["songs"] as? [[String: Any]] ?? []).map { Song(dict: $0) }
     }
 
-    /// 心动模式：网易云私人 FM（/personal/fm），返回一串可连续播放的推荐单曲。
-    /// 与 ncmDailyRecommend（recommend/songs）区分数据源；未绑定网易云时后端返回错误引导去绑定。
+    /// 心动模式：云村私人 FM（/personal/fm），返回一串可连续播放的推荐单曲。
+    /// 与 ncmDailyRecommend（recommend/songs）区分数据源；未绑定云村时后端返回错误引导去绑定。
     static func ncmHeartbeat() async throws -> [Song] {
         let d = try await getJSON("/api/ncm/heartbeat")
         return (d["songs"] as? [[String: Any]] ?? []).map { Song(dict: $0) }
@@ -419,6 +419,21 @@ struct APIClient {
         return d["ok"] as? Bool ?? false
     }
 
+    /// 汽水扫码登录：生成二维码（返回 token + 二维码 data URL）。
+    static func sodaQRCreate() async throws -> (token: String, qrimg: String) {
+        let d = try await request("/api/soda/qr/create", method: "POST", body: [:])
+        return (d["token"] as? String ?? "", d["qrimg"] as? String ?? "")
+    }
+
+    /// 汽水扫码登录：轮询扫码状态。status ∈ waiting/scanned/expired/success/failed
+    static func sodaQRCheck(token: String) async throws -> (status: String, message: String, secondVerify: Bool) {
+        let enc = token.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let d = try await getJSON("/api/soda/qr/check?token=" + enc)
+        return (d["status"] as? String ?? "waiting",
+                d["message"] as? String ?? "",
+                d["second_verify"] as? Bool ?? false)
+    }
+
     /// 双卡「汽水·推荐音乐」直接播：bridge 取第一个推荐歌单的曲目
     static func sodaRecommend() async throws -> [Song] {
         let d = try await getJSON("/api/soda/recommend/tracks")
@@ -450,21 +465,21 @@ struct APIClient {
         return sodaSongs(d["songs"] as? [[String: Any]] ?? [])
     }
 
-    /// 新建网易云歌单（真实写入账号），返回歌单 id
+    /// 新建云村歌单（真实写入账号），返回歌单 id
     static func ncmCreatePlaylist(name: String, privacy: String = "0") async throws -> String {
         let enc = kxQueryEncode(name)
         let d = try await getJSON("/api/ncm/playlist/create?name=\(enc)&privacy=\(privacy)")
         return String(describing: d["id"] ?? "")
     }
 
-    /// 把歌曲加入指定网易云歌单；songID 可带 online: 前缀，后端会剥离
+    /// 把歌曲加入指定云村歌单；songID 可带 online: 前缀，后端会剥离
     static func ncmAddToPlaylist(pid: String, songID: String) async throws {
         let enc = kxQueryEncode(songID)
         let t = Int(Date().timeIntervalSince1970 * 1000)
         _ = try await getJSON("/api/ncm/playlist/add?pid=\(pid)&id=\(enc)&_t=\(t)")
     }
 
-    /// 收藏 / 取消收藏网易云歌单（真实写入账号）。subscribe=true 收藏，false 取消。
+    /// 收藏 / 取消收藏云村歌单（真实写入账号）。subscribe=true 收藏，false 取消。
     /// 后端对业务成败都返回 200，这里直接读 ok/error 文案给前端提示。
     static func ncmSubscribePlaylist(id: String, subscribe: Bool) async throws -> (ok: Bool, error: String?) {
         let t = subscribe ? "1" : "2"
@@ -472,7 +487,7 @@ struct APIClient {
         return (d["ok"] as? Bool ?? false, d["error"] as? String)
     }
 
-    /// 发送 / 回复网易云歌曲评论（真实写入账号）。
+    /// 发送 / 回复云村歌曲评论（真实写入账号）。
     /// commentID 非空表示回复该条评论（上游 t=2），否则发新评论（t=1）。
     /// 内容 1-140 字，前后端都会校验；GET 走严格编码避免 & = + 等字符截断 query。
     static func ncmSendComment(songID: String, content: String,
