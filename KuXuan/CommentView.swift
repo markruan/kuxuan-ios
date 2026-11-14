@@ -36,11 +36,8 @@ struct CommentSheet: View {
         NavigationStack {
             Group {
                 if loading && !loadedOnce {
-                    VStack(spacing: 12) {
-                        ProgressView()
-                        Text("正在加载评论…").font(.caption).foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    KXCommentSkeleton()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 } else if let e = errorMsg, !loadedOnce {
                     VStack(spacing: 14) {
                         KXIcon(icon: .comment, size: 42, color: .secondary)
