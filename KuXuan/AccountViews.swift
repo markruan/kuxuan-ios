@@ -25,6 +25,7 @@ struct AccountCenterView: View {
     @State private var showCreatePlaylist = false
     @State private var newPlaylistName = ""
     @State private var creating = false
+    @State private var confirmUnbind = false
 
     var body: some View {
         NavigationStack {
@@ -257,13 +258,20 @@ struct AccountCenterView: View {
             KXLabel(auth.ncmBound ? "切换账号 / 重新扫码" : "扫码登录网易云", icon: .qr)
         }
 
-        Button(role: .destructive) {
-            Task {
-                await auth.unbindNCM()
-                infoMessage = "已退出网易云账号，收藏仅保存在本机"
-            }
-        } label: {
+        // HIG：破坏性操作必须先确认，不能在 List 里点一下就解绑账号
+        Button(role: .destructive) { confirmUnbind = true } label: {
             KXLabel("退出网易云账号", icon: .unlink)
+        }
+        .confirmationDialog(
+            "退出后云端收藏与歌单将不再同步，本机已缓存的内容仍会保留。",
+            isPresented: $confirmUnbind, titleVisibility: .visible) {
+            Button("退出网易云账号", role: .destructive) {
+                Task {
+                    await auth.unbindNCM()
+                    infoMessage = "已退出网易云账号，收藏仅保存在本机"
+                }
+            }
+            Button("取消", role: .cancel) { }
         }
     }
 
