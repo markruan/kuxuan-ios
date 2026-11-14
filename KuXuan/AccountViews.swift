@@ -100,17 +100,8 @@ struct AccountCenterView: View {
     // MARK: 资料卡
     private var profileHeader: some View {
         HStack(spacing: 14) {
-            ZStack {
-                Circle().fill(LinearGradient.kx)
-                if let img = avatarURL {
-                    KXCachedImage(url: img, placeholder: nil)
-                        .clipShape(Circle())
-                } else {
-                    KXIcon(icon: .person, size: 30, color: .white)
-                }
-            }
-            .frame(width: 62, height: 62)
-            .overlay(Circle().stroke(Color.white.opacity(0.6), lineWidth: 2))
+            KXAvatar(urlString: auth.ncmProfile?.avatar, size: 62, background: .kx)
+                .overlay(Circle().stroke(Color.white.opacity(0.6), lineWidth: 2))
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(auth.ncmProfile?.nickname ?? "未登录")
@@ -121,11 +112,6 @@ struct AccountCenterView: View {
             Spacer()
         }
         .padding(.vertical, 6)
-    }
-
-    private var avatarURL: URL? {
-        let a = auth.ncmProfile?.avatar ?? ""
-        return a.isEmpty ? nil : APIClient.proxiedPicURL(a, size: 160)
     }
 
     // MARK: 我的收藏（歌曲 / 歌单 / 歌手 三类聚合）
