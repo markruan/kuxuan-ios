@@ -3,7 +3,7 @@ import UIKit
 
 // MARK: - 歌曲评论
 // 读：后端 /api/online/comment/<id>（上游 /comment/music），滚到底自动翻页，无需点「加载更多」。
-// 写：后端 /api/ncm/comment/add（上游 /comment，必须带已绑定的网易云 cookie）。
+// 写：后端 /api/ncm/comment/add（上游 /comment，必须带已绑定的云村 cookie）。
 // 图标统一走 KXIcon（自绘），不使用苹果 SF Symbols。
 struct CommentSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -202,7 +202,7 @@ struct CommentSheet: View {
     @MainActor
     private func load(reset: Bool) async {
         guard !songID.isEmpty else {
-            errorMsg = "这首歌没有可用的网易云 ID，无法加载评论"
+            errorMsg = "这首歌没有可用的云村 ID，无法加载评论"
             return
         }
         if reset {
@@ -300,7 +300,7 @@ private struct CommentComposer: View {
             HStack(spacing: 8) {
                 TextField(auth.ncmBound
                           ? (replyTo == nil ? "写一条评论…" : "写回复…")
-                          : "绑定网易云账号后可发评论",
+                          : "绑定云村账号后可发评论",
                           text: $draft)
                     .textFieldStyle(.roundedBorder)
                     .focused($composerFocused)
