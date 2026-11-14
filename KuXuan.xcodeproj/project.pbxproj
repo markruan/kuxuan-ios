@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A1B2C3D4E5F60718293A0011 /* ArtistView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A0012 /* ArtistView.swift */; };
 		007B79A7FA66566074077873 /* QueueSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 840C600476BA068D5ED51272 /* QueueSheet.swift */; };
 		0813B1AB41DD958340F2AE21 /* PlayerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 290E1123B548D354E5118A84 /* PlayerEngine.swift */; };
 		0B5E735BD86F680EBD072487 /* MiniPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 989ECC99F5EB056F397FFDD6 /* MiniPlayer.swift */; };
@@ -35,6 +36,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A1B2C3D4E5F60718293A0012 /* ArtistView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtistView.swift; sourceTree = "<group>"; };
 		093E505839749E7AAB988DE5 /* CommentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentView.swift; sourceTree = "<group>"; };
 		0E0104BBBA1C6132C73CC591 /* FullPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullPlayer.swift; sourceTree = "<group>"; };
 		14A19782A69E0C0BF2F09435 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
@@ -77,6 +79,7 @@
 			children = (
 				C8052AD2028651B03A02102B /* AccountViews.swift */,
 				E47C537EEB0FF4D58194685F /* API.swift */,
+				A1B2C3D4E5F60718293A0012 /* ArtistView.swift */,
 				14A19782A69E0C0BF2F09435 /* App.swift */,
 				63AC83C1A72C74C3B5E2E59C /* AuthStore.swift */,
 				093E505839749E7AAB988DE5 /* CommentView.swift */,
@@ -191,6 +194,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1B2C3D4E5F60718293A0011 /* ArtistView.swift in Sources */,
 				C1DF4358523686CB6590737E /* API.swift in Sources */,
 				373799A38DDC56B1BC4A9D57 /* AccountViews.swift in Sources */,
 				3BE3306DDA873E888CDD4315 /* App.swift in Sources */,
@@ -229,6 +233,7 @@
 				INFOPLIST_FILE = KuXuan/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.markkuxuan.kuxuan;
+				PRODUCT_NAME = KuXuan;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -251,6 +256,7 @@
 				INFOPLIST_FILE = KuXuan/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.markkuxuan.kuxuan;
+				PRODUCT_NAME = KuXuan;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
