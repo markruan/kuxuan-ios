@@ -11,12 +11,17 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("全屏歌词样式") {
+            Section {
                 Picker("显示样式", selection: $lyricsStyleRaw) {
                     ForEach(LyricsStyle.allCases) { s in
                         Text(s.title).tag(s.rawValue)
                     }
                 }
+            } header: {
+                Text("全屏歌词样式")
+            } footer: {
+                Text(LyricsStyle.current.description)
+                    .font(.caption2)
             }
 
             Section {
