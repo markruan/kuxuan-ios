@@ -199,6 +199,9 @@ struct HomeView: View {
     @State private var loading = false
     @State private var errorMsg: String?
     @State private var bannerIndex = 0
+    /// 轮播计时器必须稳定持有：内联 Timer.publish 会在每次 body 重算时重新订阅并把 4 秒清零，
+    /// 而 bannerIndex 自增本身就会触发重算 → 轮播永远不前进。
+    @State private var bannerTimer = Timer.publish(every: 4, on: .main, in: .common).autoconnect()
     @State private var searchText = ""
     @State private var searchQuery = ""
     @State private var showSearch = false
@@ -221,10 +224,8 @@ struct HomeView: View {
                     if !h.playlists.isEmpty { recommendSection(h.playlists) }
                     if !h.charts.isEmpty { chartSection(h.charts) }
                     if !h.newsongs.isEmpty { newSongSection(h.newsongs) }
-                    statusFooter(h)
                 } else if loading {
-                    KXSkeletonList(rows: 3)
-                        .padding(.horizontal, 16).padding(.top, 8)
+                    KXHomeSkeleton()
                 } else if errorMsg != nil {
                     errorView
                 }
@@ -282,7 +283,7 @@ struct HomeView: View {
                 Button { openSearch() } label: {
                     KXIcon(icon: .search, size: 17, color: .secondary)
                         // inset 负值只扩大命中区到 44pt，不改变搜索框行高
-                        .contentShape(Rectangle().inset(by: -12))
+                        .contentShape(Rectangle().inset(by: -16))
                         .accessibilityHidden(true)
                 }
                 .buttonStyle(.plain)
@@ -295,7 +296,7 @@ struct HomeView: View {
                 if !searchText.isEmpty {
                     Button { searchText = "" } label: {
                         KXIcon(icon: .close, size: 16, color: .secondary)
-                            .contentShape(Rectangle().inset(by: -12))
+                            .contentShape(Rectangle().inset(by: -16))
                             .accessibilityHidden(true)
                     }
                     .buttonStyle(.plain)
@@ -409,7 +410,7 @@ struct HomeView: View {
         }
         .padding(.horizontal, side)
         .onAppear { if bannerIndex >= banners.count { bannerIndex = 0 } }
-        .onReceive(Timer.publish(every: 4, on: .main, in: .common).autoconnect()) { _ in
+        .onReceive(bannerTimer) { _ in
             guard banners.count > 1 else { return }
             withAnimation(.easeInOut(duration: 0.35)) {
                 bannerIndex = (bannerIndex + 1) % banners.count
@@ -444,8 +445,7 @@ struct HomeView: View {
     // MARK: 推荐歌单（横向画廊轮播，参考「推荐专辑」堆叠卡片样式）
     private func recommendSection(_ playlists: [Playlist]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("推荐歌单",
-                         subtitle: playlists.count > 0 ? "\(playlists.count) 个精选 · 左右滑动浏览" : "\(playlists.count) 个精选")
+            sectionTitle("推荐歌单")
             GalleryCarousel(playlists: playlists)
         }
     }
@@ -531,7 +531,7 @@ struct HomeView: View {
     // MARK: 榜单（封面左下不再叠数字名次角标）
     @ViewBuilder
     private func chartSection(_ charts: [Chart]) -> some View {
-        sectionTitle("排行榜", subtitle: "实时更新")
+        sectionTitle("排行榜")
         VStack(spacing: 10) {
             ForEach(charts) { c in
                 NavigationLink(value: PlaylistRef(id: c.id, name: c.name, cover: c.cover)) {
@@ -560,7 +560,7 @@ struct HomeView: View {
     // MARK: 新歌
     @ViewBuilder
     private func newSongSection(_ songs: [Song]) -> some View {
-        sectionTitle("新歌速递", subtitle: "\(songs.count) 首")
+        sectionTitle("新歌速递")
         VStack(spacing: 8) {
             ForEach(Array(songs.enumerated()), id: \.element.id) { i, s in
                 Button {
@@ -591,17 +591,6 @@ struct HomeView: View {
         .padding(.horizontal, 16)
     }
 
-    private func statusFooter(_ h: HomeResp) -> some View {
-        HStack(spacing: 6) {
-            Circle().fill(h.online ? Color.green : Color.orange).frame(width: 6, height: 6)
-            Text("音源状态：\(h.statusText)")
-            Spacer()
-            Text("\(h.playlists.count) 歌单 · \(h.newsongs.count) 新歌")
-        }
-        .font(.caption2).foregroundColor(.secondary)
-        .padding(.horizontal, 20).padding(.top, 4)
-    }
-
     // MARK: 每日推荐（网易云每日歌曲推荐）
     // 后端优先用已绑定账号的个性化推荐，账号无推荐时回退上游默认推荐，
     // 因此无论是否绑定都能拿到一组每日歌曲。横向卡片轨道 + 「播放全部」。
@@ -610,11 +599,9 @@ struct HomeView: View {
         if !dailyChecked {
             EmptyView()
         } else if dailyLoading && dailySongs.isEmpty {
-            HStack(spacing: 8) {
-                ProgressView().scaleEffect(0.8)
-                Text("加载每日推荐…").font(.caption).foregroundColor(.secondary)
-            }
-            .padding(.horizontal, 16)
+            ProgressView().scaleEffect(0.8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
         } else if let err = dailyError, dailySongs.isEmpty {
             HStack(spacing: 6) {
                 KXIcon(icon: .warning, size: 16, color: .secondary)
@@ -622,12 +609,20 @@ struct HomeView: View {
             }
             .padding(.horizontal, 16)
         } else if dailySongs.isEmpty {
-            if !ncmBound { bindPrompt }
+            if !ncmBound {
+                bindPrompt
+            } else {
+                // 已绑定但服务端返回空列表时，给一个不打断的占位说明，
+                // 否则整块「每日推荐」会静默消失，看起来像页面没加载完。
+                Text("暂无每日推荐")
+                    .font(.caption).foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+            }
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("每日推荐").font(.headline)
-                    Text("\(dailySongs.count) 首").font(.caption2).foregroundColor(.secondary)
                     Spacer()
                     Button {
                         player.playSongs(dailySongs, index: 0)
@@ -709,8 +704,9 @@ struct HomeView: View {
             }
             dailySongs = try await APIClient.ncmDailyRecommend()
         } catch {
-            dailySongs = []
-            dailyError = "每日推荐加载失败"
+            // 保留上一次成功的结果：偶发网络失败不该把整块每日推荐清空。
+            // 只有从未成功加载过时才展示错误占位。
+            if dailySongs.isEmpty { dailyError = "每日推荐加载失败" }
         }
     }
 
@@ -786,6 +782,8 @@ struct SearchSheet: View {
     @State private var searched = false
     @State private var lastQuery = ""
     @State private var err: String?
+    /// 请求序号：快速改词 / 切 tab 时旧请求晚到不许覆盖新结果
+    @State private var searchSeq = 0
 
     var body: some View {
         NavigationStack {
@@ -798,7 +796,7 @@ struct SearchSheet: View {
                     if !query.isEmpty {
                         Button { query = "" } label: {
                             KXIcon(icon: .close, size: 16, color: .secondary)
-                                .contentShape(Rectangle().inset(by: -12))
+                                .contentShape(Rectangle().inset(by: -16))
                                 .accessibilityHidden(true)
                         }
                         .buttonStyle(.plain)
@@ -828,10 +826,6 @@ struct SearchSheet: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("取消") { dismiss() }
-                        .foregroundColor(.kxAccent)
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("关闭") { dismiss() }
                         .foregroundColor(.kxAccent)
                 }
             }
@@ -963,26 +957,32 @@ struct SearchSheet: View {
     private func runSearch() async {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
+        searchSeq += 1
+        let seq = searchSeq
         lastQuery = q
         loading = true
         err = nil
         do {
             switch tab {
             case .songs:
-                songs = try await APIClient.search(q: q)
-                artists = []; playlists = []
+                let r = try await APIClient.search(q: q)
+                guard seq == searchSeq else { return }
+                songs = r; artists = []; playlists = []
             case .artists:
-                artists = try await APIClient.searchArtists(q: q)
-                songs = []; playlists = []
+                let r = try await APIClient.searchArtists(q: q)
+                guard seq == searchSeq else { return }
+                artists = r; songs = []; playlists = []
             case .playlists:
-                playlists = try await APIClient.searchPlaylists(q: q)
-                songs = []; artists = []
+                let r = try await APIClient.searchPlaylists(q: q)
+                guard seq == searchSeq else { return }
+                playlists = r; songs = []; artists = []
             }
             searched = true
         } catch {
+            guard seq == searchSeq else { return }
             songs = []; artists = []; playlists = []
             searched = true
-            err = "搜索失败：\(error.localizedDescription)\n请确认 Mac 上 server.py 已启动、手机与 Mac 处于同一 Wi-Fi"
+            err = "搜索失败，请检查网络连接后重试"
         }
         loading = false
     }
