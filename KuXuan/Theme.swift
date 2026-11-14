@@ -146,6 +146,38 @@ struct PlayErrorToast: View {
     }
 }
 
+/// 操作成功确认提示：与 FavSyncToast 同风格（顶部浮出、深色胶囊），但用于
+/// 「已收藏 / 评论已发布 / 已加入歌单 / 歌单已创建」等正向反馈，配绿色对勾。
+/// 区别于异常提示（橙/红）。由调用方写入 message，本组件负责 2.8s 自动消失与无障碍播报。
+struct KXSuccessToast: View {
+    @Binding var message: String?
+    var body: some View {
+        Group {
+            if let msg = message {
+                HStack(spacing: 7) {
+                    KXIcon(icon: .check, size: 15, color: .white)
+                    Text(msg).font(.caption).lineLimit(2)
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 14).padding(.vertical, 9)
+                .background(Color.black.opacity(0.78), in: Capsule())
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: message)
+        .onChange(of: message) { new in
+            guard let new else { return }
+            KXAnnounce(new)
+            let cap = new
+            Task {
+                try? await Task.sleep(nanoseconds: 2_800_000_000)
+                if let current = message, current == cap { message = nil }
+            }
+        }
+    }
+}
+
 // MARK: - KuXuan 统一图标体系（自绘 Path，不使用 SF Symbols）
 // 设计约束：所有图标统一 24×24 网格、1.9 线宽、圆角端点/拐角、品牌强调色。
 // 目的：个人中心 / 设置 / 扫码 / 收藏等页面不再混用苹果系统图标，视觉语言一致。
