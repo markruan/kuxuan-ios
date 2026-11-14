@@ -32,6 +32,9 @@
 		C1DF4358523686CB6590737E /* API.swift in Sources */ = {isa = PBXBuildFile; fileRef = E47C537EEB0FF4D58194685F /* API.swift */; };
 		DABDA2E29053A046924C0479 /* Icon-60@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 862D14F30B584588CEF40EEB /* Icon-60@2x.png */; };
 		E2BECBDADED081AA2B17B941 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BBE06CB7BB1E4D15F0F43B6 /* HomeView.swift */; };
+		4EB9FD64708418FC15D2137B /* SodaPlaylistView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D537CD17A089B828578AD2BA /* SodaPlaylistView.swift */; };
+		2CDA868AC69DF6E0BDF4ECDB /* SodaModesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17933449F194896183ACAC60 /* SodaModesView.swift */; };
+		04551F26FFF4359F41236914 /* SodaAudioLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DC78944DC7CB7FEFA3AEE0C /* SodaAudioLoader.swift */; };
 		EF3E11D4A5679371678BCC38 /* Icon-83.5@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 45B85CA026A1722A7848CA66 /* Icon-83.5@2x.png */; };
 /* End PBXBuildFile section */
 
@@ -45,6 +48,9 @@
 		2F19CB80161A5A64CE8EC76C /* ImageColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageColor.swift; sourceTree = "<group>"; };
 		45B85CA026A1722A7848CA66 /* Icon-83.5@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icon-83.5@2x.png"; sourceTree = "<group>"; };
 		4BBE06CB7BB1E4D15F0F43B6 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		D537CD17A089B828578AD2BA /* SodaPlaylistView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SodaPlaylistView.swift; sourceTree = "<group>"; };
+		17933449F194896183ACAC60 /* SodaModesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SodaModesView.swift; sourceTree = "<group>"; };
+		2DC78944DC7CB7FEFA3AEE0C /* SodaAudioLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SodaAudioLoader.swift; sourceTree = "<group>"; };
 		4EF55722689D5E7209CA36AE /* Icon-Spotlight-40@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icon-Spotlight-40@3x.png"; sourceTree = "<group>"; };
 		6330D55A6FF293E0A05107CB /* PlaylistView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistView.swift; sourceTree = "<group>"; };
 		63AC83C1A72C74C3B5E2E59C /* AuthStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthStore.swift; sourceTree = "<group>"; };
@@ -85,6 +91,9 @@
 				093E505839749E7AAB988DE5 /* CommentView.swift */,
 				0E0104BBBA1C6132C73CC591 /* FullPlayer.swift */,
 				4BBE06CB7BB1E4D15F0F43B6 /* HomeView.swift */,
+				D537CD17A089B828578AD2BA /* SodaPlaylistView.swift */,
+				17933449F194896183ACAC60 /* SodaModesView.swift */,
+				2DC78944DC7CB7FEFA3AEE0C /* SodaAudioLoader.swift */,
 				862D14F30B584588CEF40EEB /* Icon-60@2x.png */,
 				AABED55FB2F2F4EB4BAEB9D5 /* Icon-60@3x.png */,
 				8166517535B87A11C83B4288 /* Icon-76@2x.png */,
@@ -202,6 +211,9 @@
 				B294FB278890C739C577BD11 /* CommentView.swift in Sources */,
 				9987704D5FB40840E6CCD570 /* FullPlayer.swift in Sources */,
 				E2BECBDADED081AA2B17B941 /* HomeView.swift in Sources */,
+				4EB9FD64708418FC15D2137B /* SodaPlaylistView.swift in Sources */,
+				2CDA868AC69DF6E0BDF4ECDB /* SodaModesView.swift in Sources */,
+				04551F26FFF4359F41236914 /* SodaAudioLoader.swift in Sources */,
 				6EC98315403881F1E33FACB6 /* ImageColor.swift in Sources */,
 				0B5E735BD86F680EBD072487 /* MiniPlayer.swift in Sources */,
 				5B33C00FF0F54A052928CBDA /* Models.swift in Sources */,
