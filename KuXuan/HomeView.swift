@@ -242,7 +242,6 @@ struct HomeView: View {
     @State private var showAccount = false
     @FocusState private var searchFocused: Bool
     @State private var dailySongs: [Song] = []
-    @State private var ncmBound = false
     @State private var dailyChecked = false
     @State private var dailyLoading = false
         @State private var dailyError: String?
@@ -899,7 +898,7 @@ struct HomeView: View {
             }
             .padding(.horizontal, 16)
         } else if dailySongs.isEmpty {
-            if !ncmBound {
+            if !auth.ncmBound {
                 bindPrompt
             } else {
                 // 已绑定但服务端返回空列表时，给一个不打断的占位说明，
@@ -955,15 +954,18 @@ struct HomeView: View {
     }
 
     private var heartCard: some View {
-        smartRecommendTile(
+        let bound = auth.ncmBound
+        let count = heartSongs.count
+        let buttonText = bound ? (count > 0 ? "播放" : "准备中…") : "去绑定"
+        return smartRecommendTile(
             source: "网易云",
             sourceColor: Color(red: 0.76, green: 0.05, blue: 0.05),
             title: "心动模式",
             subtitle: heartSubtitle,
-            buttonText: heartSongs.isEmpty ? "去绑定" : "播放",
+            buttonText: buttonText,
             onTap: {
-                if heartSongs.isEmpty { showAccount = true }
-                else { player.playSongs(heartSongs, index: 0) }
+                if !bound { showAccount = true }
+                else if count > 0 { player.playSongs(heartSongs, index: 0) }
             }
         )
     }
@@ -989,8 +991,9 @@ struct HomeView: View {
     }
 
     private var heartSubtitle: String {
+        if !auth.ncmBound { return "去个人中心绑定网易云后开启" }
         if heartLoading && heartSongs.isEmpty { return "加载中…" }
-        if heartSongs.isEmpty { return "绑定网易云后开启" }
+        if heartSongs.isEmpty { return "心动模式准备中" }
         return "已备好 \(heartSongs.count) 首"
     }
 
@@ -1084,9 +1087,6 @@ struct HomeView: View {
         dailyError = nil
         defer { dailyLoading = false; dailyChecked = true }
         do {
-            if let me = try? await APIClient.ncmMe() {
-                ncmBound = me.bound
-            }
             dailySongs = try await APIClient.ncmDailyRecommend()
         } catch {
             // 保留上一次成功的结果：偶发网络失败不该把整块每日推荐清空。
