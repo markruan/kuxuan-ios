@@ -7,7 +7,7 @@ import UIKit
 //     强调数值用 .kxAccent；只有「解绑」的文字沿用 iOS destructive 的系统红。
 //     不再混用 green / orange / 图标各色，避免整页花。
 //  2) 按「是什么」而不是「从哪来」分组：音乐内容、歌单、账号同步、设置、服务状态各自成段；
-//     我创建的歌单从「网易云账号」移到「我的歌单」，服务状态不再和设置挤在一起。
+//     我创建的歌单从「云村账号」移到「我的歌单」，服务状态不再和设置挤在一起。
 //  3) 图标全部走 KXIcon / KXLabel 自绘体系，不使用苹果 SF Symbols。
 struct AccountCenterView: View {
     @Environment(\.dismiss) private var dismiss
@@ -30,6 +30,7 @@ struct AccountCenterView: View {
     @State private var confirmUnbind = false
     @State private var loading = false
     @State private var showSodaBind = false
+    @State private var showSodaQR = false
     @State private var sodaCookie = ""
     @State private var lastLoadAt: Date = .distantPast
 
@@ -43,7 +44,7 @@ struct AccountCenterView: View {
                 Section("最近播放") { recentSection }
 
                 Section("我的歌单") { playlistSection }
-                Section("网易云账号") { ncmSection }
+                Section("云村账号") { ncmSection }
                 Section("汽水音乐") { sodaSection }
 
                 Section("设置") { settingsSection }
@@ -58,12 +59,15 @@ struct AccountCenterView: View {
             }
             .task { await load(force: true) }
             .refreshable { await load(force: true) }
-            // 回前台做一次轻量刷新，但 20 秒内不重复；RootView 也会核对网易云绑定态。
+            // 回前台做一次轻量刷新，但 20 秒内不重复；RootView 也会核对云村绑定态。
             .onChange(of: scenePhase) { phase in
                 if phase == .active { Task { await load() } }
             }
             .sheet(isPresented: $showSodaBind) {
                 sodaBindSheet
+            }
+            .sheet(isPresented: $showSodaQR) {
+                SodaQRView().environmentObject(auth)
             }
             .sheet(isPresented: $showQR) {
                 NCMQRView().environmentObject(auth)
@@ -174,21 +178,21 @@ struct AccountCenterView: View {
             showCreatePlaylist = true
         } label: {
             HStack {
-                KXLabel("新建网易云歌单", icon: .plusCircle)
+                KXLabel("新建云村歌单", icon: .plusCircle)
                 Spacer()
                 if creating { ProgressView().scaleEffect(0.7) }
             }
         }
-        .alert("新建网易云歌单", isPresented: $showCreatePlaylist) {
+        .alert("新建云村歌单", isPresented: $showCreatePlaylist) {
             TextField("歌单名称", text: $newPlaylistName)
             Button("取消", role: .cancel) { newPlaylistName = "" }
             Button("创建") { Task { await createPlaylist() } }
         } message: {
-            Text("将在已连接的网易云账号中创建歌单。")
+            Text("将在已连接的云村账号中创建歌单。")
         }
 
         if !auth.ncmBound {
-            Text("绑定网易云账号后，可在这里查看和创建歌单。")
+            Text("绑定云村账号后，可在这里查看和创建歌单。")
                 .font(.caption).foregroundColor(.secondary)
         } else if auth.ncmPlaylists.filter({ !$0.subscribed }).isEmpty {
             if auth.ncmBound && !auth.ncmPlaylistsLoaded {
@@ -204,7 +208,7 @@ struct AccountCenterView: View {
                     .kxSkeletonChrome("正在加载歌单")
                 }
             } else {
-                Text("还没有创建过歌单，点上方「新建网易云歌单」创建第一个。")
+                Text("还没有创建过歌单，点上方「新建云村歌单」创建第一个。")
                     .font(.caption).foregroundColor(.secondary)
             }
         } else {
@@ -235,7 +239,7 @@ struct AccountCenterView: View {
         let name = newPlaylistName.trimmingCharacters(in: .whitespacesAndNewlines)
         newPlaylistName = ""
         guard !name.isEmpty else { return }
-        guard auth.ncmBound else { infoMessage = "请先扫码绑定网易云账号"; return }
+        guard auth.ncmBound else { infoMessage = "请先扫码绑定云村账号"; return }
         creating = true
         do {
             _ = try await APIClient.ncmCreatePlaylist(name: name)
@@ -247,14 +251,14 @@ struct AccountCenterView: View {
         creating = false
     }
 
-    // MARK: 网易云账号
+    // MARK: 云村账号
     @ViewBuilder
     private var ncmSection: some View {
         HStack(spacing: 10) {
             KXIcon(icon: auth.ncmBound ? .checkCircle : .person,
                    size: 19, color: .kxAccent)
             VStack(alignment: .leading, spacing: 2) {
-                Text(auth.ncmBound ? (auth.ncmProfile?.nickname ?? "网易云") : "未连接网易云")
+                Text(auth.ncmBound ? (auth.ncmProfile?.nickname ?? "云村") : "未连接云村")
                     .font(.subheadline.bold())
                 Text(auth.ncmBound ? "已登录" : "扫码登录后可收藏并管理歌单")
                     .font(.caption2).foregroundColor(.secondary)
@@ -263,17 +267,17 @@ struct AccountCenterView: View {
         }
 
         Button { showQR = true } label: {
-            KXLabel(auth.ncmBound ? "切换账号 / 重新扫码" : "扫码登录网易云", icon: .qr)
+            KXLabel(auth.ncmBound ? "切换账号 / 重新扫码" : "扫码登录云村", icon: .qr)
         }
 
         // HIG：破坏性操作必须先确认，不能在 List 里点一下就解绑账号
         Button(role: .destructive) { confirmUnbind = true } label: {
-            KXLabel("退出网易云账号", icon: .unlink)
+            KXLabel("退出云村账号", icon: .unlink)
         }
         .confirmationDialog(
             "退出后云端收藏与歌单将不再同步，本机已缓存的内容仍会保留。",
             isPresented: $confirmUnbind, titleVisibility: .visible) {
-            Button("退出网易云账号", role: .destructive) {
+            Button("退出云村账号", role: .destructive) {
                 Task {
                     await auth.unbindNCM()
                     infoMessage = nil
@@ -299,6 +303,9 @@ struct AccountCenterView: View {
             if !auth.sodaBound {
                 Button { showSodaBind = true } label: {
                     KXLabel("粘贴 Cookie 绑定汽水", icon: .qr)
+                }
+                Button { showSodaQR = true } label: {
+                    KXLabel("扫码登录汽水", icon: .qr)
                 }
             } else {
                 Button(role: .destructive) { Task { await auth.unbindSoda() } } label: {
@@ -362,7 +369,7 @@ struct AccountCenterView: View {
     }
 }
 
-// MARK: - 网易云扫码登录
+// MARK: - 云村扫码登录
 struct NCMQRView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -373,9 +380,9 @@ struct NCMQRView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 18) {
-                Text("用网易云 App 扫码登录")
+                Text("用云村 App 扫码登录")
                     .font(.title3.bold())
-                Text("请在另一台设备上打开网易云 App → 扫一扫；扫码后在手机上点「确认登录」。")
+                Text("请在另一台设备上打开云村 App → 扫一扫；扫码后在手机上点「确认登录」。")
                     .font(.caption).foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
@@ -402,7 +409,7 @@ struct NCMQRView: View {
                 if auth.qrBound {
                     HStack(spacing: 6) {
                         KXIcon(icon: .checkCircle, size: 17, color: .kxAccent)
-                        Text("已连接网易云 · \(auth.ncmProfile?.nickname ?? "网易云账号")")
+                        Text("已连接云村 · \(auth.ncmProfile?.nickname ?? "云村账号")")
                             .foregroundColor(.kxAccent)
                     }
                     Button("完成") { dismiss() }
@@ -425,7 +432,7 @@ struct NCMQRView: View {
                         }
                         .buttonStyle(.bordered)
                         .font(.footnote)
-                        Text("只有一台手机时：保存后打开网易云 App → 扫一扫 → 从相册选取二维码，即可完成登录；回到本页会自动显示成功。")
+                        Text("只有一台手机时：保存后打开云村 App → 扫一扫 → 从相册选取二维码，即可完成登录；回到本页会自动显示成功。")
                             .font(.caption2).foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 28)
@@ -434,7 +441,7 @@ struct NCMQRView: View {
                 Spacer()
             }
             .padding(.top, 28)
-            .navigationTitle("网易云登录")
+            .navigationTitle("云村登录")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -465,6 +472,109 @@ struct NCMQRView: View {
                 // 只打 /ncm/qr/check。旧实现每 2 秒调 resumeQRCheck()，
                 // 会连带 /ncm/me + /ncm/playlists 全量请求，扫码页挂 1 分钟就是几十次无用流量。
                 await auth.pollQR()
+            }
+        }
+    }
+}
+
+struct SodaQRView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+    @EnvironmentObject var auth: AuthStore
+    @State private var pollTask: Task<Void, Never>?
+    @State private var saved = false
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 18) {
+                Text("用汽水音乐 App 扫码登录")
+                    .font(.title3.bold())
+                Text("请在另一台设备上打开汽水音乐 App → 扫一扫；扫码后在手机上点「确认登录」。只有一台手机时，可保存二维码到相册后再从相册选取扫码。")
+                    .font(.caption).foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.white)
+                        .frame(width: 230, height: 230)
+                        .shadow(radius: 8)
+                    if let img = auth.sodaQrImage {
+                        Image(uiImage: img)
+                            .resizable().scaledToFit()
+                            .frame(width: 210, height: 210)
+                    } else {
+                        KXQRSkeleton()
+                    }
+                }
+
+                Text(auth.sodaQrMessage)
+                    .font(.subheadline)
+                    .foregroundColor(auth.sodaQrBound ? .kxAccent : .secondary)
+                    .multilineTextAlignment(.center)
+
+                if auth.sodaQrBound {
+                    HStack(spacing: 6) {
+                        KXIcon(icon: .checkCircle, size: 17, color: .kxAccent)
+                        Text("已连接汽水音乐")
+                            .foregroundColor(.kxAccent)
+                    }
+                    Button("完成") { dismiss() }
+                        .buttonStyle(.borderedProminent).tint(.kxAccent)
+                } else {
+                    Button {
+                        startPolling(createQR: true)
+                    } label: {
+                        KXLabel("刷新二维码", icon: .refresh)
+                    }
+                    .buttonStyle(.bordered)
+
+                    if let qr = auth.sodaQrImage {
+                        Button {
+                            UIImageWriteToSavedPhotosAlbum(qr, nil, nil, nil)
+                            saved = true
+                        } label: {
+                            KXLabel(saved ? "已保存到相册" : "保存二维码到相册",
+                                    icon: saved ? .check : .download)
+                        }
+                        .buttonStyle(.bordered)
+                        .font(.footnote)
+                        Text("只有一台手机时：保存后打开汽水音乐 App → 扫一扫 → 从相册选取二维码，即可完成登录；回到本页会自动显示成功。")
+                            .font(.caption2).foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 28)
+                    }
+                }
+                Spacer()
+            }
+            .padding(.top, 28)
+            .navigationTitle("汽水音乐登录")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("关闭") { pollTask?.cancel(); dismiss() }
+                }
+            }
+            .task { startPolling(createQR: true) }
+            .onChange(of: scenePhase) { phase in
+                if phase == .active, !auth.sodaQrBound { startPolling(createQR: false) }
+            }
+            .onDisappear { pollTask?.cancel() }
+        }
+    }
+
+    private func startPolling(createQR: Bool) {
+        pollTask?.cancel()
+        pollTask = Task { @MainActor in
+            if createQR {
+                await auth.startSodaQR()
+            } else {
+                await auth.pollSodaQR()
+            }
+            while !Task.isCancelled, !auth.sodaQrBound {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if Task.isCancelled || auth.sodaQrBound { break }
+                await auth.pollSodaQR()
             }
         }
     }
