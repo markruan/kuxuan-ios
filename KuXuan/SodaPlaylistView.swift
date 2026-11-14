@@ -3,8 +3,8 @@ import SwiftUI
 /// 汽水歌单详情页（个人测试）。
 ///
 /// 与 `PlaylistView` 视觉一致（居中大封面 → 标题 → 播放/随机 → 歌曲列表），
-/// 但完全解耦网易云：数据来自 `API.sodaPlaylistTracks`，播放走 `player.playSongs`
-/// （汽水加密流由 PlayerEngine 自动经本地 bridge 解密后播放）。不含网易云「收藏歌单」逻辑。
+/// 但完全解耦云村：数据来自 `API.sodaPlaylistTracks`，播放走 `player.playSongs`
+/// （汽水加密流由 PlayerEngine 自动经本地 bridge 解密后播放）。不含云村「收藏歌单」逻辑。
 struct SodaPlaylistView: View {
     @EnvironmentObject var player: PlayerEngine
     let id: String
