@@ -2009,6 +2009,13 @@ struct SongInfoSheet: View {
     @State private var newPlaylistName = ""
     @State private var creatingPlaylist = false
 
+    /// 网易云 /user/playlist 同时返回「我创建的」和「我收藏的」歌单。
+    /// 上游 /playlist/tracks 只能操作自己创建的歌单，收藏的他人歌单会直接失败，
+    /// 因此「加入歌单」只列自建歌单（subscribed == false），与个人中心「我的歌单」口径一致。
+    private var ownPlaylists: [NCMPlaylist] {
+        auth.ncmPlaylists.filter { !$0.subscribed }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -2076,11 +2083,13 @@ struct SongInfoSheet: View {
                     if !auth.ncmBound {
                         Text("绑定网易云账号后，可把这首歌加入云端歌单。")
                             .font(.caption).foregroundColor(.secondary)
-                    } else if auth.ncmPlaylists.isEmpty {
-                        Text("还没有云端歌单，点上方「新建网易云歌单」创建第一个。")
+                    } else if ownPlaylists.isEmpty {
+                        Text(auth.ncmPlaylists.isEmpty
+                             ? "还没有云端歌单，点上方「新建网易云歌单」创建第一个。"
+                             : "你还没有自建歌单。收藏的歌单不能加歌，点上方新建歌单后再加入。")
                             .font(.caption).foregroundColor(.secondary)
                     } else {
-                        ForEach(auth.ncmPlaylists) { pl in
+                        ForEach(ownPlaylists) { pl in
                             Button {
                                 Task { await addToPlaylist(pl) }
                             } label: {
@@ -2105,7 +2114,7 @@ struct SongInfoSheet: View {
                 } header: {
                     Text("加入歌单")
                 } footer: {
-                    Text("会真实写入你的网易云账号，在网易云 App 里也能看到。")
+                    Text("只显示你创建的歌单：网易云不支持往收藏的他人歌单里加歌。加入会真实写入你的账号，在网易云 App 里也能看到。")
                         .font(.caption2)
                 }
 
@@ -2186,7 +2195,11 @@ struct SongInfoSheet: View {
 
     @MainActor
     private func addToPlaylist(_ pl: NCMPlaylist) async {
-        guard let id = song?.ncmID else {
+        guard !pl.subscribed else {
+            addNotice = "「\(pl.name)」是收藏的歌单，网易云不支持往里面加歌，请先新建一个自己的歌单"
+            return
+        }
+        guard let id = song?.ncmID, !id.isEmpty else {
             addNotice = "这首歌没有网易云 ID，无法加入云端歌单"
             return
         }
