@@ -20,6 +20,14 @@ struct ArtistView: View {
         .overlay(alignment: .top) {
             FavSyncToast().padding(.top, 52)
         }
+        // fullScreenCover 不自带下拉关闭：顶部指示条提供一条**可发现**的下滑关闭路径。
+        // 手势只挂在指示条 20pt 区域，不与内部 ScrollView 的滚动竞争。
+        .overlay(alignment: .top) {
+            KXModalGrabber()
+                .kxModalDismiss(isPresented: Binding<Bool>(
+                    get: { player.artistToShow != nil },
+                    set: { if !$0 { player.artistToShow = nil } }))
+        }
     }
 }
 
@@ -59,11 +67,9 @@ struct ArtistDetailContent: View {
                 topBar
                 Group {
                     if loading {
-                        VStack(spacing: 12) {
-                            ProgressView()
-                            Text("加载中…").font(.caption).foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        KXSkeletonList()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                            .padding(16)
                     } else if let e = err {
                         VStack(spacing: 12) {
                             KXIcon(icon: .warning, size: 40, color: .orange)
@@ -86,22 +92,19 @@ struct ArtistDetailContent: View {
     // MARK: 顶部栏：收起整页 + （下钻后）返回上一层
     private var topBar: some View {
         HStack(spacing: 12) {
-            Button { player.artistToShow = nil } label: {
-                KXIcon(icon: .chevronDown, size: 22, color: .primary)
-                    .frame(width: 40, height: 40)
+            KXModalCloseButton(label: "关闭歌手页", hint: "返回上一页", color: .primary) {
+                player.artistToShow = nil
             }
-            .buttonStyle(.plain)
             Spacer()
             if !path.isEmpty {
-                Button { path.removeLast() } label: {
-                    KXIcon(icon: .chevronLeft, size: 20, color: .primary)
-                        .frame(width: 40, height: 40)
-                }
-                .buttonStyle(.plain)
+                KXIconButton(icon: .chevronLeft, label: "返回上一个歌手",
+                             size: 20, color: .primary) { path.removeLast() }
             }
         }
         .padding(.horizontal, 8)
-        .padding(.top, 6)
+        // 顶部 24pt 让位给「下拉关闭」指示条（overlay 占 0~20pt），
+        // 否则指示条的拖拽热区会盖住关闭按钮上半部分。
+        .padding(.top, 24)
         .padding(.bottom, 4)
     }
 
@@ -156,9 +159,12 @@ struct ArtistDetailContent: View {
                     Text(faved ? "已收藏" : "收藏").font(.subheadline)
                 }
                 .padding(.horizontal, 18).padding(.vertical, 9)
+                .frame(minHeight: 44)
                 .background(Capsule().fill(Color(.secondarySystemGroupedBackground)))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(faved ? "取消收藏歌手" : "收藏歌手")
+            .accessibilityValue(faved ? "已收藏" : "未收藏")
 
             Button {
                 guard !songs.isEmpty else { return }
@@ -170,10 +176,12 @@ struct ArtistDetailContent: View {
                     Text("播放全部").font(.subheadline.bold())
                 }
                 .padding(.horizontal, 18).padding(.vertical, 9)
+                .frame(minHeight: 44)
                 .background(Capsule().fill(Color.kxAccent))
                 .foregroundColor(.white)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("播放全部歌曲")
         }
     }
 
@@ -196,7 +204,7 @@ struct ArtistDetailContent: View {
                                 KXCover(url: APIClient.coverURL(s.cover, size: 120))
                                     .frame(width: 46, height: 46).cornerRadius(6)
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(s.title).font(.system(size: 15, weight: .medium)).lineLimit(1)
+                                    Text(s.title).font(KXFont.scaled(15, weight: .medium)).lineLimit(1)
                                     Text(s.artist).font(.caption).foregroundColor(.secondary).lineLimit(1)
                                 }
                                 Spacer()
