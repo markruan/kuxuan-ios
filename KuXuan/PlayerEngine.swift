@@ -27,6 +27,12 @@ final class PlayerEngine: ObservableObject {
         UserDefaults.standard.stringArray(forKey: "kuxuan_local_only_favs") ?? [])
     /// 每次 playCurrent 递增；歌词/封面异步请求回写前校验，杜绝旧请求晚到覆盖新歌。
     private var mediaRequestID: UInt64 = 0
+    /// 连点收藏时的请求序号：同一首歌/同一个歌手只认最后一次点击的云端结果，
+    /// 否则先发出的请求晚到会回滚掉用户最新的意图（并让红心状态与云端不一致）。
+    private var favSeq: UInt64 = 0
+    private var latestFavSeq: [String: UInt64] = [:]
+    private var favArtistSeq: UInt64 = 0
+    private var latestFavArtistSeq: [String: UInt64] = [:]
     @Published var history: [Song] = []
     /// 待打开的歌手页（任意位置点歌手名/头像都会设置它，由 RootView 的 fullScreenCover 承接）
     @Published var artistToShow: MiniArtist?
@@ -211,6 +217,9 @@ final class PlayerEngine: ObservableObject {
     func toggleFav(_ song: Song) {
         let willFav = !favs.contains(song.id)
         applyFav(song, liked: willFav)          // 先乐观更新本地，点击立刻有反馈
+        favSeq += 1
+        let seq = favSeq
+        latestFavSeq[song.id] = seq
 
         // 关键修复：在线歌曲 id 是 "online:<数字>"（后端 _norm_song 统一加前缀），
         // 必须剥掉前缀才能拿到真实网易云 id。此前直接判断 song.id 是否纯数字，
@@ -223,16 +232,12 @@ final class PlayerEngine: ObservableObject {
         }
         Task {
             do {
-                let verified = try await APIClient.ncmLike(songID: ncmID, like: willFav)
+                _ = try await APIClient.ncmLike(songID: ncmID, like: willFav)
                 await MainActor.run {
-                    // 后端 /api/ncm/like 的 verified=false 只表示 /likelist 上游缓存尚未刷新，
-                    // 写入本身已成功（后端明确返回 ok=True 以避免客户端误回滚）。
-                    // 因此这里只调整提示文案，绝不能据此回滚本地收藏。
-                    if verified {
-                        showFavNotice(willFav ? "已收藏到网易云" : "已取消网易云收藏")
-                    } else {
-                        showFavNotice("已提交网易云，云端列表稍后更新")
-                    }
+                    guard latestFavSeq[song.id] == seq else { return }
+                    latestFavSeq.removeValue(forKey: song.id)
+                    // 后端 /ncm/like 的 verified=false 只表示 /likelist 缓存未刷新，写入本身已成功，
+                    // 绝不能据此回滚本地收藏；成功也不弹提示，红心状态变化本身就是反馈。
                     unmarkLocalOnly(song.id)
                     if let n = cloudFavCount {
                         cloudFavCount = max(0, n + (willFav ? 1 : -1))
@@ -241,14 +246,19 @@ final class PlayerEngine: ObservableObject {
             } catch {
                 let msg = error.localizedDescription
                 await MainActor.run {
+                    guard latestFavSeq[song.id] == seq else { return }
+                    latestFavSeq.removeValue(forKey: song.id)
                     if msg.contains("尚未绑定") || msg.contains("NOT_BOUND") {
                         // 未绑定期间的在线收藏同样要保留，否则下次云端同步会被当成「云端已删」丢掉
                         markLocalOnly(song.id)
                         showFavNotice("仅保存在本机")
                     } else {
                         unmarkLocalOnly(song.id)
-                        // 远端明确失败：回滚本地，避免两端状态长期不一致
-                        applyFav(song, liked: !willFav)
+                        // 远端明确失败：回滚本地，避免两端状态长期不一致。
+                        // 只有本地状态仍是本次点击的期望值时才回滚，避免覆盖用户后续点击。
+                        if favs.contains(song.id) == willFav {
+                            applyFav(song, liked: !willFav)
+                        }
                         showFavNotice("同步失败，已还原：\(msg)")
                     }
                 }
@@ -330,19 +340,25 @@ final class PlayerEngine: ObservableObject {
     func toggleFavArtist(_ artist: MiniArtist) {
         let willFav = !isFavArtist(artist.id)
         applyFavArtist(artist, fav: willFav)
+        favArtistSeq += 1
+        let seq = favArtistSeq
+        latestFavArtistSeq[artist.id] = seq
         Task {
             do {
                 if willFav {
                     _ = try await APIClient.artistSub(id: artist.id)
-                    await MainActor.run { showFavArtistNotice("已关注歌手") }
                 } else {
                     _ = try await APIClient.artistUnsub(id: artist.id)
-                    await MainActor.run { showFavArtistNotice("已取消关注") }
                 }
             } catch {
                 let msg = error.localizedDescription
                 await MainActor.run {
-                    applyFavArtist(artist, fav: !willFav)   // 回滚本地状态
+                    // 连点时只处理最后一次：旧请求失败不能回滚掉用户新的收藏状态
+                    guard latestFavArtistSeq[artist.id] == seq else { return }
+                    latestFavArtistSeq.removeValue(forKey: artist.id)
+                    if isFavArtist(artist.id) == willFav {
+                        applyFavArtist(artist, fav: !willFav)
+                    }
                     if msg.contains("尚未绑定") || msg.contains("NOT_BOUND") {
                         showFavArtistNotice("请先在个人中心连接网易云")
                     } else {
