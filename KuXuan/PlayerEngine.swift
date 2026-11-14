@@ -13,6 +13,13 @@ final class PlayerEngine: ObservableObject {
     @Published var currentIndex: Int = -1
     @Published var isPlaying: Bool = false
     @Published var currentTime: Double = 0
+    /// 实时播放时间：直接读 AVPlayer，精度到帧。
+    /// 区别于 @Published currentTime（由 0.5s 周期观察器采样）——全屏歌词逐字/逐句进度若读 currentTime，
+    /// 会最多滞后 0.5s，表现为「歌词进度和歌曲不一致」。歌词视图的 onReceive 应读此值。
+    var playbackTime: Double {
+        let t = player.currentTime()
+        return t.isValid ? t.seconds : currentTime
+    }
     @Published var duration: Double = 0
     @Published var playMode: Int = 0          // 0 列表循环 / 1 单曲循环 / 2 随机
     @Published var showFullPlayer: Bool = false
