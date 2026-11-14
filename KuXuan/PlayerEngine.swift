@@ -21,6 +21,12 @@ final class PlayerEngine: ObservableObject {
     @Published var lyrics: [LyricLine] = []
     @Published var favs: Set<String> = []
     @Published var favSongs: [Song] = []      // 完整歌曲对象，供「我的收藏」列表展示/播放
+    /// 「未与云端确认」的本地收藏 id：本地曲库、未绑定网易云期间的收藏。
+    /// 云端同步时必须保留，否则会被误判成「云端已取消」而丢掉。持久化避免重启后丢失。
+    private var localOnlyFavIDs: Set<String> = Set(
+        UserDefaults.standard.stringArray(forKey: "kuxuan_local_only_favs") ?? [])
+    /// 每次 playCurrent 递增；歌词/封面异步请求回写前校验，杜绝旧请求晚到覆盖新歌。
+    private var mediaRequestID: UInt64 = 0
     @Published var history: [Song] = []
     /// 待打开的歌手页（任意位置点歌手名/头像都会设置它，由 RootView 的 fullScreenCover 承接）
     @Published var artistToShow: MiniArtist?
@@ -147,8 +153,10 @@ final class PlayerEngine: ObservableObject {
         // 绝不因为切歌把正在看的全屏播放页关掉。
         if openFull { showFullPlayer = true }
         addHistory(s)
-        Task { await loadLyric(s.file) }
-        Task { await updateCover(s.cover) }
+        mediaRequestID += 1
+        let requestID = mediaRequestID
+        Task { await loadLyric(s.file, requestID: requestID) }
+        Task { await updateCover(s.cover, requestID: requestID) }
         updateNowPlaying()
     }
 
@@ -209,6 +217,7 @@ final class PlayerEngine: ObservableObject {
         // 结果所有在线歌曲都被挡在云同步之外、只写本机 —— 用户说的「假收藏」。
         // 只有本地曲库（id 非数字）才确实无法对应云端歌曲，仅存本机。
         guard let ncmID = song.ncmID else {
+            markLocalOnly(song.id)     // 本地曲库不与云端对应，同步时必须保留
             showFavNotice("本地曲目仅保存在本机")
             return
         }
@@ -216,11 +225,15 @@ final class PlayerEngine: ObservableObject {
             do {
                 let verified = try await APIClient.ncmLike(songID: ncmID, like: willFav)
                 await MainActor.run {
-                    if willFav {
-                        showFavNotice("已收藏到网易云")
+                    // 后端 /api/ncm/like 的 verified=false 只表示 /likelist 上游缓存尚未刷新，
+                    // 写入本身已成功（后端明确返回 ok=True 以避免客户端误回滚）。
+                    // 因此这里只调整提示文案，绝不能据此回滚本地收藏。
+                    if verified {
+                        showFavNotice(willFav ? "已收藏到网易云" : "已取消网易云收藏")
                     } else {
-                        showFavNotice("已取消网易云收藏")
+                        showFavNotice("已提交网易云，云端列表稍后更新")
                     }
+                    unmarkLocalOnly(song.id)
                     if let n = cloudFavCount {
                         cloudFavCount = max(0, n + (willFav ? 1 : -1))
                     }
@@ -229,9 +242,11 @@ final class PlayerEngine: ObservableObject {
                 let msg = error.localizedDescription
                 await MainActor.run {
                     if msg.contains("尚未绑定") || msg.contains("NOT_BOUND") {
-                        // 未绑定：本地收藏照常保留，只是不上传
+                        // 未绑定期间的在线收藏同样要保留，否则下次云端同步会被当成「云端已删」丢掉
+                        markLocalOnly(song.id)
                         showFavNotice("仅保存在本机")
                     } else {
+                        unmarkLocalOnly(song.id)
                         // 远端明确失败：回滚本地，避免两端状态长期不一致
                         applyFav(song, liked: !willFav)
                         showFavNotice("同步失败，已还原：\(msg)")
@@ -257,7 +272,10 @@ final class PlayerEngine: ObservableObject {
                 }
                 var merged = resp.songs
                 let cloudIDs = Set(resp.songs.map { $0.id })
-                for s in favSongs where !cloudIDs.contains(s.id) && s.ncmID == nil {
+                // 保留本地独有的两类：本地曲库（无 ncmID）与「未绑定/未确认期间」的收藏。
+                // 早期只保留 s.ncmID == nil，会把未绑定期间收藏的在线歌曲误当「云端已删」丢掉。
+                for s in favSongs where !cloudIDs.contains(s.id) &&
+                    (s.ncmID == nil || localOnlyFavIDs.contains(s.id)) {
                     merged.append(s)
                 }
                 favSongs = merged
@@ -270,6 +288,15 @@ final class PlayerEngine: ObservableObject {
         }
     }
 
+    private func markLocalOnly(_ id: String) {
+        localOnlyFavIDs.insert(id)
+        UserDefaults.standard.set(Array(localOnlyFavIDs), forKey: "kuxuan_local_only_favs")
+    }
+    private func unmarkLocalOnly(_ id: String) {
+        guard localOnlyFavIDs.remove(id) != nil else { return }
+        UserDefaults.standard.set(Array(localOnlyFavIDs), forKey: "kuxuan_local_only_favs")
+    }
+
     private func applyFav(_ song: Song, liked: Bool) {
         if liked {
             guard !favs.contains(song.id) else { return }
@@ -279,6 +306,7 @@ final class PlayerEngine: ObservableObject {
             guard favs.contains(song.id) else { return }
             favs.remove(song.id)
             favSongs.removeAll { $0.id == song.id }
+            unmarkLocalOnly(song.id)
         }
         saveFavs()
         saveFavSongs()
@@ -417,33 +445,50 @@ final class PlayerEngine: ObservableObject {
     }
 
     // MARK: - 主色 / 歌词
-    private func updateCover(_ path: String) async {
+    private func updateCover(_ path: String, requestID: UInt64) async {
         guard let img = await APIClient.fetchImage(path) else { return }
         let c = dominantColor(img)
         await MainActor.run {
+            // 切歌竞态：旧歌封面/主色请求可能晚于新歌返回，序号不符就丢弃
+            guard requestID == self.mediaRequestID else { return }
             self.currentCoverImage = img
             withAnimation(.easeInOut(duration: 0.6)) { self.coverColor = c }
             self.updateNowPlaying()
         }
     }
 
-    func loadLyric(_ file: String) async {
-        guard !file.isEmpty else { await MainActor.run { lyrics = [] }; return }
+    func loadLyric(_ file: String, requestID: UInt64) async {
+        guard !file.isEmpty else {
+            await MainActor.run {
+                guard requestID == self.mediaRequestID else { return }
+                lyrics = []
+            }
+            return
+        }
         do {
             let d = try await APIClient.lyricJSON(file: file)
             let lrc = (d["lrc"] as? String) ?? ""
             let yrc = (d["yrc"] as? String) ?? ""
             let tlyric = (d["tlyric"] as? String) ?? ""
             let lines = parseEnhancedLyrics(lrc: lrc, yrc: yrc, tlyric: tlyric)
-            await MainActor.run { lyrics = lines }
+            await MainActor.run {
+                guard requestID == self.mediaRequestID else { return }
+                lyrics = lines
+            }
         } catch {
             // 回退：旧纯文本接口
             do {
                 let text = try await APIClient.lyric(file: file)
                 let lines = parseLRC(text)
-                await MainActor.run { lyrics = lines }
+                await MainActor.run {
+                    guard requestID == self.mediaRequestID else { return }
+                    lyrics = lines
+                }
             } catch {
-                await MainActor.run { lyrics = [] }
+                await MainActor.run {
+                    guard requestID == self.mediaRequestID else { return }
+                    lyrics = []
+                }
             }
         }
     }
