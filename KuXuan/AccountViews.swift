@@ -114,7 +114,8 @@ struct AccountCenterView: View {
     private var myFavSection: some View {
         NavigationLink {
             SongListPage(title: "收藏歌曲", songs: player.favSongs,
-                         empty: "还没有收藏歌曲\n在播放页点 ♡ 即可收藏")
+                         empty: "还没有收藏歌曲\n在播放页点 ♡ 即可收藏",
+                         showsSyncPlaceholder: true)
         } label: {
             rowWithValue(KXLabel("收藏歌曲", icon: .heartFill),
                          value: "\(player.favSongs.count) 首")
@@ -178,8 +179,22 @@ struct AccountCenterView: View {
             Text("绑定网易云账号后，可在这里查看和创建歌单。")
                 .font(.caption).foregroundColor(.secondary)
         } else if auth.ncmPlaylists.filter({ !$0.subscribed }).isEmpty {
-            Text("还没有创建过歌单，点上方「新建网易云歌单」创建第一个。")
-                .font(.caption).foregroundColor(.secondary)
+            if auth.ncmBound && !auth.ncmPlaylistsLoaded {
+                ForEach(0..<2, id: \.self) { _ in
+                    HStack(spacing: 10) {
+                        KXSkelBar(w: 40, h: 40, r: KXRadius.cover)
+                        VStack(alignment: .leading, spacing: 2) {
+                            KXSkelBar(w: 140, h: 13)
+                            KXSkelBar(w: 90, h: 10)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .kxSkeletonChrome("正在加载歌单")
+                }
+            } else {
+                Text("还没有创建过歌单，点上方「新建网易云歌单」创建第一个。")
+                    .font(.caption).foregroundColor(.secondary)
+            }
         } else {
             // 我的歌单段只放「我创建的」(subscribed == false)；
             // 「我收藏的歌单」(subscribed == true) 归到「我的收藏 → 收藏歌单」。
@@ -309,7 +324,7 @@ struct NCMQRView: View {
                             .resizable().scaledToFit()
                             .frame(width: 210, height: 210)
                     } else {
-                        ProgressView().frame(width: 210, height: 210)
+                        KXQRSkeleton()
                     }
                 }
 
@@ -392,13 +407,19 @@ struct NCMQRView: View {
 // MARK: - 通用歌曲列表（收藏 / 历史）
 struct SongListPage: View {
     @EnvironmentObject var player: PlayerEngine
+    @EnvironmentObject var auth: AuthStore
     let title: String
     let songs: [Song]
     let empty: String
+    /// 只有「收藏歌曲」这类依赖云端同步的列表才需要占位；最近播放 / 本地曲库空就是真的空。
+    var showsSyncPlaceholder = false
 
     var body: some View {
         Group {
-            if songs.isEmpty {
+            if showsSyncPlaceholder && songs.isEmpty && auth.ncmBound && !player.cloudSyncDone {
+                KXListSkeleton()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            } else if songs.isEmpty {
                 VStack(spacing: 14) {
                     KXIcon(icon: .list, size: 42, color: .secondary)
                     Text(empty).font(.subheadline).foregroundColor(.secondary)
@@ -454,7 +475,10 @@ struct PlaylistListPage: View {
 
     var body: some View {
         Group {
-            if playlists.isEmpty {
+            if playlists.isEmpty && auth.ncmBound && !auth.ncmPlaylistsLoaded {
+                KXListSkeleton(rows: 9)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            } else if playlists.isEmpty {
                 VStack(spacing: 14) {
                     KXIcon(icon: .list, size: 42, color: .secondary)
                     Text(empty).font(.subheadline).foregroundColor(.secondary)
@@ -501,7 +525,10 @@ struct ArtistFavPage: View {
 
     var body: some View {
         Group {
-            if player.favArtists.isEmpty {
+            if player.favArtists.isEmpty && auth.ncmBound && !player.cloudSyncDone {
+                KXListSkeleton(rows: 9, circular: true)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            } else if player.favArtists.isEmpty {
                 VStack(spacing: 14) {
                     KXIcon(icon: .person, size: 42, color: .secondary)
                     Text("还没有收藏歌手\n在歌手页点 ♡ 即可收藏").font(.subheadline).foregroundColor(.secondary)
