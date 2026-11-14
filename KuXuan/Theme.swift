@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import UIKit
 
 // MARK: - 新感官 NEW SENSE · 原生设计系统
 // 与 web/style.css 的 :root token 一一对应，便于 Web / 原生双端视觉统一。
@@ -95,9 +96,15 @@ struct FavSyncToast: View {
                 .padding(.horizontal, 14).padding(.vertical, 9)
                 .background(Color.black.opacity(0.78), in: Capsule())
                 .transition(.move(edge: .top).combined(with: .opacity))
+                // 合并为一个无障碍元素，VoiceOver 读到完整句子而不是图标+碎片文本
+                .accessibilityElement(children: .combine)
             }
         }
         .animation(.easeInOut(duration: 0.25), value: message)
+        // 纯视觉 toast 对 VoiceOver 用户等于不存在：出现时主动播报一次
+        .onChange(of: message) { new in
+            if let new { KXAnnounce(new) }
+        }
     }
 }
 
@@ -116,9 +123,14 @@ struct PlayErrorToast: View {
                 .padding(.horizontal, 14).padding(.vertical, 9)
                 .background(Color.orange.opacity(0.92), in: Capsule())
                 .transition(.move(edge: .top).combined(with: .opacity))
+                // 橙色只用来区分提示类型，文字「无法播放」已表达语义，不单靠颜色传达信息
+                .accessibilityElement(children: .combine)
             }
         }
         .animation(.easeInOut(duration: 0.25), value: player.playError)
+        .onChange(of: player.playError) { new in
+            if let new { KXAnnounce(new) }
+        }
     }
 }
 
@@ -487,5 +499,150 @@ extension View {
                     KXBackButton(label: label)
                 }
             }
+    }
+}
+
+// MARK: - 无障碍 / 模态统一基础设施
+
+/// 支持 Dynamic Type 的系统字号。
+/// 项目里有 28 处 `.font(.system(size:))`：这类固定字号不随系统「更大字体」变化，
+/// 大字模式下标题/按钮文字会被裁切。这里以指定文本样式为基准缩放，同时限制最大
+/// 1.5 倍，避免辅助字号把逐字歌词画布与固定高度行撑破。
+enum KXFont {
+    static func scaled(_ size: CGFloat,
+                       weight: Font.Weight = .regular,
+                       relativeTo style: UIFont.TextStyle = .body,
+                       maxScale: CGFloat = 1.5) -> Font {
+        let raw = UIFontMetrics(forTextStyle: style).scaledValue(for: size)
+        return .system(size: min(raw, size * maxScale), weight: weight)
+    }
+}
+
+/// 统一纯图标按钮：自绘 KXIcon 本身不产生可朗读文本，必须在组件层补齐标签；
+/// 同时把命中区钉到 HIG 要求的 44×44pt。
+struct KXIconButton: View {
+    let icon: KXIconName
+    let label: String
+    var hint: String? = nil
+    var size: CGFloat = 20
+    var color: Color = .white
+    var filled: Bool = false
+    var value: String? = nil
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            KXIcon(icon: icon, size: size, color: color, filled: filled)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+                .accessibilityHidden(true)   // 图标装饰，语义由按钮标签承担
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityHint(hint ?? "")
+        .accessibilityValue(value ?? "")
+    }
+}
+
+/// 统一模态关闭按钮：fullScreenCover 不自带系统关闭控件，歌手页 / 全屏歌词页共用这一枚，
+/// 保证「有明确取消控件 + 一致的 VoiceOver 标签 + 44pt 命中区」。
+struct KXModalCloseButton: View {
+    var label: String = "关闭"
+    var hint: String = "关闭当前页面"
+    var color: Color = .white
+    let action: () -> Void
+
+    var body: some View {
+        KXIconButton(icon: .chevronDown, label: label, hint: hint,
+                     size: 22, color: color, action: action)
+    }
+}
+
+/// 模态顶部的可拖动指示条：给 fullScreenCover / 自定义浮层一条**可发现**的下滑关闭路径。
+/// 只挂在顶部 24pt 区域，避免与内容 ScrollView 的滚动手势竞争。
+struct KXModalGrabber: View {
+    var body: some View {
+        Capsule()
+            .fill(Color.primary.opacity(0.22))
+            .frame(width: 40, height: 5)
+            .frame(maxWidth: .infinity, minHeight: 20)
+            .contentShape(Rectangle())
+            .accessibilityHidden(true)      // VoiceOver 用显式关闭按钮，不占焦点
+    }
+}
+
+/// 统一模态下滑关闭手势。绑定 isPresented，只有「垂直主导 + 下滑 > 90pt」才关闭；
+/// 使用 simultaneousGesture，不阻塞子视图的滚动/按钮手势。
+struct KXModalDismissGesture: ViewModifier {
+    @Binding var isPresented: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content.simultaneousGesture(
+            DragGesture(minimumDistance: 30, coordinateSpace: .local)
+                .onEnded { v in
+                    guard v.translation.height > 90,
+                          v.translation.height > abs(v.translation.width) * 1.3 else { return }
+                    if reduceMotion { isPresented = false }
+                    else {
+                        withAnimation(.easeInOut(duration: 0.25)) { isPresented = false }
+                    }
+                }
+        )
+    }
+}
+
+extension View {
+    func kxModalDismiss(isPresented: Binding<Bool>) -> some View {
+        self.modifier(KXModalDismissGesture(isPresented: isPresented))
+    }
+}
+
+/// 无障碍播报：收藏同步 / 播放失败等短提示是纯视觉 toast，VoiceOver 用户完全感知不到。
+/// 统一在提示出现时发一条 announcement（不打断当前焦点）。
+func KXAnnounce(_ message: String) {
+    guard UIAccessibility.isVoiceOverRunning, !message.isEmpty else { return }
+    UIAccessibility.post(notification: .announcement, argument: message)
+}
+
+/// 骨架屏占位：代替全屏转圈 spinner。保留内容的形状与层级，加载完成时不产生突兀的整页跳变，
+/// 并给 VoiceOver 一个明确的「正在加载」元素（而不是一个永远转圈的进度指示器）。
+struct KXSkeletonList: View {
+    var rows: Int = 5
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 14) {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(.secondarySystemFill))
+                    .frame(width: 112, height: 112)
+                VStack(alignment: .leading, spacing: 10) {
+                    RoundedRectangle(cornerRadius: 4).fill(Color(.secondarySystemFill))
+                        .frame(width: 150, height: 20)
+                    RoundedRectangle(cornerRadius: 4).fill(Color(.secondarySystemFill))
+                        .frame(width: 100, height: 12)
+                    RoundedRectangle(cornerRadius: 4).fill(Color(.secondarySystemFill))
+                        .frame(width: 120, height: 12)
+                }
+                Spacer()
+            }
+            ForEach(0..<rows, id: \.self) { _ in
+                HStack(spacing: 12) {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color(.secondarySystemFill))
+                        .frame(width: 46, height: 46)
+                    VStack(alignment: .leading, spacing: 6) {
+                        RoundedRectangle(cornerRadius: 4).fill(Color(.secondarySystemFill))
+                            .frame(width: 160, height: 13)
+                        RoundedRectangle(cornerRadius: 4).fill(Color(.secondarySystemFill))
+                            .frame(width: 96, height: 10)
+                    }
+                    Spacer()
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .redacted(reason: .placeholder)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("正在加载")
     }
 }
