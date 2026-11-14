@@ -231,6 +231,8 @@ struct HomeView: View {
     @State private var loading = false
     @State private var errorMsg: String?
     @State private var bannerIndex = 0
+    /// 排行榜横向分页当前页（每页 3 个榜单卡），用于底部小圆点高亮
+    @State private var chartPage = 0
     /// 轮播计时器必须稳定持有：内联 Timer.publish 会在每次 body 重算时重新订阅并把 4 秒清零，
     /// 而 bannerIndex 自增本身就会触发重算 → 轮播永远不前进。
     @State private var bannerTimer = Timer.publish(every: 4, on: .main, in: .common).autoconnect()
@@ -254,6 +256,7 @@ struct HomeView: View {
                     if !h.banners.isEmpty { bannerPager(h.banners) }
                     dailySection
                     if !h.playlists.isEmpty { recommendSection(h.playlists) }
+                    myPlaylistsSection
                     if !h.charts.isEmpty { chartSection(h.charts) }
                     if !h.newsongs.isEmpty { newSongSection(h.newsongs) }
                 } else if loading {
@@ -281,7 +284,11 @@ struct HomeView: View {
         )
         // 不对 ScrollView 加 ignoresSafeArea(edges:.top)：会把标题顶进状态栏。
         .navigationBarHidden(true)
-        .task { await load(); await loadDaily() }
+        .task {
+            await load(); await loadDaily()
+            // 首页「我的歌单」依赖云端歌单；已绑定且首轮未加载时主动拉取一次
+            if auth.ncmBound, !auth.ncmPlaylistsLoaded { await auth.refreshNCM() }
+        }
         .refreshable { await load(); await loadDaily() }
         .sheet(isPresented: $showSearch) {
             SearchSheet(initialQuery: searchQuery,
@@ -560,33 +567,147 @@ struct HomeView: View {
         }
     }
 
-    // MARK: 榜单（封面左下不再叠数字名次角标）
+    // MARK: 我的歌单（首页新增：2 列网格，与横滑推荐歌单 / 每日推荐形成形态差异）
     @ViewBuilder
-    private func chartSection(_ charts: [Chart]) -> some View {
-        sectionTitle("排行榜")
-        VStack(spacing: 10) {
-            ForEach(charts) { c in
-                NavigationLink(value: PlaylistRef(id: c.id, name: c.name, cover: c.cover)) {
-                    HStack(spacing: 12) {
-                        ZStack {
-                            Color(.systemFill)
-                            KXCover(url: APIClient.coverURL(c.cover, size: 140))
-                        }
-                        .frame(width: 56, height: 56)
-                        .clipShape(RoundedRectangle(cornerRadius: 9))
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(c.name).font(.subheadline.bold())
-                            Text(c.tracks.prefix(3).map { $0.title }.joined(separator: " / "))
-                                .font(.caption).foregroundColor(.secondary).lineLimit(1)
-                        }
-                        Spacer()
-                        KXIcon(icon: .chevron, size: 15, color: .secondary)
+    private var myPlaylistsSection: some View {
+        let mine = auth.ncmPlaylists.filter { !$0.subscribed }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("我的歌单").font(.headline)
+                Spacer()
+                if !mine.isEmpty {
+                    Button { showAccount = true } label: {
+                        Text("查看全部").font(KXFont.scaled(12)).foregroundColor(.secondary)
                     }
-                    .padding(10).kxCard(radius: 12, shadowRadius: 8)
+                    .buttonStyle(.plain)
                 }
             }
+            .padding(.horizontal, 16)
+
+            if !auth.ncmBound {
+                Button { showAccount = true } label: {
+                    HStack(spacing: 8) {
+                        KXIcon(icon: .person, size: 16, color: .kxAccent)
+                        Text("绑定网易云后查看我的歌单").font(KXFont.scaled(13)).foregroundColor(.secondary)
+                        Spacer()
+                        KXIcon(icon: .chevron, size: 14, color: .secondary)
+                    }
+                    .padding(12)
+                    .kxCard(radius: 12, shadowRadius: 6)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+            } else if !auth.ncmPlaylistsLoaded {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    ForEach(0..<4, id: \.self) { _ in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Color(.systemFill).frame(height: 150).clipShape(RoundedRectangle(cornerRadius: 12))
+                            Color(.systemFill).frame(height: 12).clipShape(RoundedRectangle(cornerRadius: 4))
+                            Color(.systemFill).frame(width: 80, height: 10).clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+            } else if mine.isEmpty {
+                HStack(spacing: 8) {
+                    KXIcon(icon: .list, size: 16, color: .secondary)
+                    Text("还没有创建歌单").font(KXFont.scaled(13)).foregroundColor(.secondary)
+                }
+                .padding(12)
+                .kxCard(radius: 12, shadowRadius: 6)
+                .padding(.horizontal, 16)
+            } else {
+                let shown = Array(mine.prefix(4))
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    ForEach(shown) { pl in
+                        NavigationLink(value: PlaylistRef(id: pl.id, name: pl.name, cover: pl.cover)) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ZStack {
+                                    Color(.systemFill)
+                                    KXCover(url: APIClient.coverURL(pl.cover, size: 260))
+                                }
+                                .aspectRatio(1, contentMode: .fill)
+                                .frame(maxWidth: .infinity)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                Text(pl.name).font(KXFont.scaled(13, weight: .semibold)).foregroundColor(.primary).lineLimit(1)
+                                Text("\(pl.trackCount) 首 · 我").font(KXFont.scaled(11)).foregroundColor(.secondary).lineLimit(1)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
         }
-        .padding(.horizontal, 16)
+    }
+
+    // MARK: 榜单（横向分页：每页 3 个榜单卡，右滑翻页，固定高度不再无限下拉）
+    @ViewBuilder
+    private func chartSection(_ charts: [Chart]) -> some View {
+        let pages = stride(from: 0, to: charts.count, by: 3).map {
+            Array(charts[$0..<min($0 + 3, charts.count)])
+        }
+        let rowH: CGFloat = 76
+        let pageH = rowH * 3 + 10 * 2
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("排行榜").font(.headline)
+                Spacer()
+                if pages.count > 1 {
+                    Text("右滑更多").font(KXFont.scaled(12)).foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 16)
+            if pages.isEmpty {
+                Color.clear.frame(height: 1)
+            } else {
+                TabView(selection: $chartPage) {
+                    ForEach(Array(pages.enumerated()), id: \.offset) { i, page in
+                        VStack(spacing: 10) {
+                            ForEach(page) { c in chartRow(c) }
+                        }
+                        .padding(.horizontal, 16)
+                        .tag(i)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(height: pageH)
+            }
+            if pages.count > 1 {
+                HStack(spacing: 6) {
+                    ForEach(Array(pages.enumerated()), id: \.offset) { i, _ in
+                        Capsule()
+                            .fill(i == chartPage ? Color.kxAccent : Color(.systemFill))
+                            .frame(width: i == chartPage ? 16 : 6, height: 6)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 10)
+                .padding(.bottom, 4)
+            }
+        }
+    }
+
+    private func chartRow(_ c: Chart) -> some View {
+        NavigationLink(value: PlaylistRef(id: c.id, name: c.name, cover: c.cover)) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Color(.systemFill)
+                    KXCover(url: APIClient.coverURL(c.cover, size: 140))
+                }
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 9))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(c.name).font(.subheadline.bold())
+                    Text(c.tracks.prefix(3).map { $0.title }.joined(separator: " / "))
+                        .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                }
+                Spacer()
+                KXIcon(icon: .chevron, size: 15, color: .secondary)
+            }
+            .padding(10)
+            .kxCard(radius: 12, shadowRadius: 8)
+        }
     }
 
     // MARK: 新歌
