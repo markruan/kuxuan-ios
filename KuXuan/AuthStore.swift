@@ -24,6 +24,10 @@ final class AuthStore: ObservableObject {
     /// 生成本次二维码时服务端是否已绑定。用于区分「本次扫码成功」和「本来就绑过账号」，
     /// 否则已绑定用户点「切换 / 重新扫码」会被旧 cookie 立刻误判为成功。
     private var qrWasBoundAtStart = false
+    /// /ncm/me + /ncm/playlists 的合并节流：回前台、扫码轮询、个人中心 .task 可能在同一秒并发触发，
+    /// 同一时刻只跑一次，3 秒内的重复调用直接复用上次结果。
+    private var ncmRefreshing = false
+    private var lastNCMRefreshAt: Date = .distantPast
 
     var isLoggedIn: Bool { !token.isEmpty && user != nil }
     var displayName: String {
@@ -133,7 +137,12 @@ final class AuthStore: ObservableObject {
 
     // MARK: - 网易云
     @MainActor
-    func refreshNCM() async {
+    func refreshNCM(minInterval: TimeInterval = 3) async {
+        let now = Date()
+        guard !ncmRefreshing else { return }
+        guard minInterval == 0 || now.timeIntervalSince(lastNCMRefreshAt) >= minInterval else { return }
+        ncmRefreshing = true
+        defer { ncmRefreshing = false; lastNCMRefreshAt = Date() }
         do {
             let me = try await APIClient.ncmMe()
             ncmBound = me.bound
@@ -217,14 +226,14 @@ final class AuthStore: ObservableObject {
             if (d["bound"] as? Bool) == true {
                 qrBound = true
                 qrMessage = "登录成功"
-                await refreshNCM()
+                await refreshNCM(minInterval: 0)
                 return
             }
             let code = d["code"] as? Int ?? 801
             switch code {
             case 800: qrMessage = "二维码已过期，请点击刷新"
             case 802: qrMessage = "已扫码，请在手机上确认登录"
-            case 803: qrBound = true; qrMessage = "登录成功"; await refreshNCM()
+            case 803: qrBound = true; qrMessage = "登录成功"; await refreshNCM(minInterval: 0)
             default:  qrMessage = "等待扫码…"
             }
         } catch {
