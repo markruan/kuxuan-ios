@@ -26,6 +26,8 @@ struct AccountCenterView: View {
     @State private var newPlaylistName = ""
     @State private var creating = false
     @State private var confirmUnbind = false
+    @State private var loading = false
+    @State private var lastLoadAt: Date = .distantPast
 
     var body: some View {
         NavigationStack {
@@ -36,23 +38,8 @@ struct AccountCenterView: View {
 
                 Section("最近播放") { recentSection }
 
-                Section {
-                    playlistSection
-                } header: {
-                    Text("我的歌单")
-                } footer: {
-                    Text("我创建的歌单保存在网易云账号里，在网易云 App 也能看到。")
-                        .font(.caption2)
-                }
-
-                Section {
-                    ncmSection
-                } header: {
-                    Text("网易云账号")
-                } footer: {
-                    Text("登录后，收藏的歌曲会保存到网易云「我喜欢的音乐」，也可新建与管理歌单。")
-                        .font(.caption2)
-                }
+                Section("我的歌单") { playlistSection }
+                Section("网易云账号") { ncmSection }
 
                 Section("设置") { settingsSection }
             }
@@ -64,8 +51,9 @@ struct AccountCenterView: View {
                     Button("完成") { dismiss() }
                 }
             }
-            .task { await load() }
-            .refreshable { await load() }
+            .task { await load(force: true) }
+            .refreshable { await load(force: true) }
+            // 回前台做一次轻量刷新，但 20 秒内不重复；RootView 也会核对网易云绑定态。
             .onChange(of: scenePhase) { phase in
                 if phase == .active { Task { await load() } }
             }
@@ -79,7 +67,7 @@ struct AccountCenterView: View {
             // 个人中心内所有歌单入口统一改用 NavigationLink { PlaylistView(...) } 闭包形式
             // （与搜索页歌单一致），点击即 push，不依赖 destination 注册层级。
             .alert("提示", isPresented: Binding<Bool>(
-                get: { infoMessage != nil },
+                get: { infoMessage.map(KXNeedsAttention) ?? false },
                 set: { if !$0 { infoMessage = nil } }
             )) {
                 Button("好", role: .cancel) { }
@@ -89,7 +77,14 @@ struct AccountCenterView: View {
         }
     }
 
-    private func load() async {
+    /// 同一时刻只跑一次；回前台的自动刷新 20 秒内复用上次结果。
+    /// 旧实现 .task / .refreshable / .onChange(scenePhase) 三条路径会并发触发全量刷新，
+    /// 每次都打 /auth/status、/ncm/me、/ncm/playlists、/likelist、/artist/sublist 五个接口。
+    private func load(force: Bool = false) async {
+        guard !loading else { return }
+        guard force || Date().timeIntervalSince(lastLoadAt) >= 20 else { return }
+        loading = true
+        defer { loading = false; lastLoadAt = Date() }
         await auth.refresh()
         if auth.ncmBound {
             await player.syncFavsFromCloud()
@@ -176,7 +171,7 @@ struct AccountCenterView: View {
             Button("取消", role: .cancel) { newPlaylistName = "" }
             Button("创建") { Task { await createPlaylist() } }
         } message: {
-            Text("将在你已连接的网易云账号里真实创建一个歌单。")
+            Text("将在已连接的网易云账号中创建歌单。")
         }
 
         if !auth.ncmBound {
@@ -218,7 +213,7 @@ struct AccountCenterView: View {
         do {
             _ = try await APIClient.ncmCreatePlaylist(name: name)
             await auth.loadNCMPlaylists()
-            infoMessage = "已在网易云创建歌单「\(name)」"
+            infoMessage = nil
         } catch {
             infoMessage = "创建失败：\(error.localizedDescription)"
         }
@@ -254,7 +249,7 @@ struct AccountCenterView: View {
             Button("退出网易云账号", role: .destructive) {
                 Task {
                     await auth.unbindNCM()
-                    infoMessage = "已退出网易云账号，收藏仅保存在本机"
+                    infoMessage = nil
                 }
             }
             Button("取消", role: .cancel) { }
@@ -376,11 +371,19 @@ struct NCMQRView: View {
     private func startPolling(createQR: Bool) {
         pollTask?.cancel()
         pollTask = Task { @MainActor in
-            if createQR { await auth.startQR() }
+            if createQR {
+                await auth.startQR()
+            } else {
+                // 从后台回来只核对一次服务端绑定态（后端监控线程可能已写好 cookie），
+                // 不在轮询循环里反复拉全量歌单。
+                await auth.refreshNCM()
+            }
             while !Task.isCancelled, !auth.qrBound {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
                 if Task.isCancelled || auth.qrBound { break }
-                await auth.resumeQRCheck()
+                // 只打 /ncm/qr/check。旧实现每 2 秒调 resumeQRCheck()，
+                // 会连带 /ncm/me + /ncm/playlists 全量请求，扫码页挂 1 分钟就是几十次无用流量。
+                await auth.pollQR()
             }
         }
     }
