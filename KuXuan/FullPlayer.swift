@@ -24,6 +24,32 @@ enum LyricsStyle: String, CaseIterable, Identifiable {
     }
 }
 
+/// 五个全屏歌词模板共用的空态。之前有的模板空态写「纯音乐，请欣赏」（其实是加载中或
+/// 解析失败的误判），有的模板干脆什么都不画 → 被当成「歌词不显示」。统一成一句中性文案。
+fileprivate struct KXNoLyrics: View {
+    var body: some View {
+        VStack(spacing: 10) {
+            KXIcon(icon: .note, size: 30, color: .white.opacity(0.45))
+            Text("暂无歌词").font(.subheadline).foregroundColor(.white.opacity(0.6))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// 歌词正文统一约束：`.position()` / `scaleEffect` 下的 Text 会按 intrinsic size 提议宽度，
+/// 长句会被拉成一整行并裁到屏幕外（看起来像「变形」）。固定可用宽度 + 居中换行即可。
+fileprivate struct KXLyricWidth: ViewModifier {
+    let total: CGFloat
+    let side: CGFloat
+    func body(content: Content) -> some View {
+        content
+            .frame(width: max(200, total - side * 2), alignment: .center)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 /// 进入/退出全屏歌词时的横竖屏处理（配合 AppDelegate 方向锁）
 ///
 /// ⚠️ 不再「强制旋转」。早期实现把方向掩码锁成 `.landscape` 并调用
@@ -207,13 +233,14 @@ struct WaveLightBackground: View {
     }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1/30)) { timeline in
+        // 调色板只由 baseColor 决定，提到 TimelineView 外算一次。
+        // 旧写法在 Canvas 里每帧（30fps）重算 HSL→RGB 并重建 Gradient。
+        let rgb = resolveRGB(baseColor)
+        let pal = wavePalette(rgb.r, rgb.g, rgb.b)
+        let bgGrad = Gradient(colors: [pal.bgMid, pal.bgEdge, pal.bgDeep])
+        return TimelineView(.animation(minimumInterval: 1/30)) { timeline in
             Canvas { context, size in
-                let rgb = resolveRGB(baseColor)
-                let pal = wavePalette(rgb.r, rgb.g, rgb.b)
-
                 let center = CGPoint(x: size.width * 0.5, y: size.height * 0.44)
-                let bgGrad = Gradient(colors: [pal.bgMid, pal.bgEdge, pal.bgDeep])
                 context.fill(Path(CGRect(origin: .zero, size: size)),
                              with: .radialGradient(bgGrad, center: center, startRadius: 0,
                                                    endRadius: hypot(size.width, size.height) * 0.62))
@@ -532,7 +559,7 @@ struct FullPlayer: View {
         } label: {
             VStack(spacing: 5) {
                 if player.lyrics.isEmpty {
-                    Text("暂无歌词 · 纯音乐，请欣赏")
+                    Text("暂无歌词")
                         .font(.caption).foregroundColor(.white.opacity(0.45))
                 } else {
                     let i = max(0, min(lyricIndex, player.lyrics.count - 1))
@@ -576,7 +603,6 @@ struct FullPlayer: View {
                             VStack(spacing: 10) {
                                 KXIcon(icon: .note, size: 30, color: .white.opacity(0.5))
                                 Text("暂无歌词").font(.subheadline).opacity(0.6)
-                                Text("纯音乐，请欣赏").font(.caption).opacity(0.4)
                             }
                             .id(-1)
                         } else {
@@ -617,12 +643,14 @@ struct FullPlayer: View {
             .accessibilityLabel("进入全屏歌词")
             .accessibilityHint("打开沉浸式歌词页")
             .opacity(lyricsFullBtnVisible ? 1 : 0)
+            // 透明视图默认仍参与命中测试，淡出后右上角会留一块「幽灵点击区」
+            .allowsHitTesting(lyricsFullBtnVisible)
             .animation(.easeInOut(duration: 0.3), value: lyricsFullBtnVisible)
-            .onAppear {
+            .task {
                 lyricsFullBtnVisible = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                    lyricsFullBtnVisible = false
-                }
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeInOut(duration: 0.3)) { lyricsFullBtnVisible = false }
             }
             .padding(.top, 8)
             .padding(.trailing, 16)
@@ -853,6 +881,9 @@ struct FullScreenLyricsView: View {
             tick = nt
             recompute()
         }
+        // 歌词是异步加载的：打开全屏页时可能还没到，暂停/时间未变时 onReceive 会一直早退，
+        // activeIndex 永远停在 -1 → 整页空白。数据一到就立刻重算。
+        .onChange(of: lines.count) { _ in tick = player.currentTime; recompute() }
         .onDisappear { setLyricsLandscape(false); setLyricsIdle(false) }
         .modifier(LyricsChromeAutoHide(visible: $chromeVisible))
     }
@@ -892,13 +923,7 @@ struct FullScreenLyricsView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     Spacer().frame(height: max(safeTop + 130, 170))
                     if lines.isEmpty {
-                        VStack(spacing: 10) {
-                            KXIcon(icon: .note, size: 30, color: .white.opacity(0.5))
-                            Text("暂无歌词").font(.subheadline).opacity(0.6)
-                            Text("纯音乐，请欣赏").font(.caption).opacity(0.4)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .id(-1)
+                        KXNoLyrics().id(-1)
                     } else {
                         ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
                             lineView(i, line)
@@ -1072,6 +1097,8 @@ struct VinylDiscLyricsView: View {
             tick = nt
             driveIndex()
         }
+        // 歌词异步到达时立即定位当前行，避免暂停状态下整页空白
+        .onChange(of: lines.count) { _ in tick = player.currentTime; driveIndex() }
         .onDisappear { setLyricsLandscape(false); setLyricsIdle(false) }
         .modifier(LyricsChromeAutoHide(visible: $chromeVisible))
     }
@@ -1101,6 +1128,7 @@ struct VinylDiscLyricsView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 14) {
                     Spacer().frame(height: safeTop + geo.size.height * 0.22)
+                    if lines.isEmpty { KXNoLyrics().frame(height: geo.size.height * 0.5) }
                     ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
                         lineCell(i, line)
                             .id(i)
@@ -1124,7 +1152,8 @@ struct VinylDiscLyricsView: View {
     private func lineCell(_ i: Int, _ line: LyricLine) -> some View {
         let isActive = i == activeIndex
         let dist = abs(i - max(activeIndex, 0))
-        let scale = isActive ? 1.0 : max(0.82, 1 - Double(dist) * 0.05)
+        // 不再对整行做 scaleEffect：以中心为锚缩放会让长行左右越界、字被压扁（"歌词变形"），
+        // 层级差异改用字号 + 透明度表达（字号在上面已按 isActive 区分）。
         let opacity = isActive ? 1.0 : max(0.25, 1 - Double(dist) * 0.18)
         return HStack(alignment: .top, spacing: 8) {
             if isActive {
@@ -1150,8 +1179,8 @@ struct VinylDiscLyricsView: View {
         }
         .foregroundColor(isActive ? accentColor : .white)
         .opacity(opacity)
-        .scaleEffect(scale)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
         .animation(.easeInOut(duration: 0.3), value: isActive)
     }
 
@@ -1214,9 +1243,11 @@ private struct VinylRotatingDisc: View {
             .frame(width: d, height: d)
             .rotationEffect(.degrees(accumulated))
             .onReceive(ticker) { now in
-                let dt = now.timeIntervalSince(last)
-                last = now
+                // 暂停 / Reduce Motion 时直接返回：不写 @State，
+                // 避免 60fps 空转触发整页重算。恢复播放时 dt 限幅，角度不跳变。
                 guard player.isPlaying, !reduceMotion else { return }
+                let dt = min(max(0, now.timeIntervalSince(last)), 0.1)
+                last = now
                 accumulated += degPerSec * dt
                 if accumulated >= 360 { accumulated -= 360 }
             }
@@ -1314,6 +1345,8 @@ struct AIDirectorLyricsView: View {
             tick = nt
             driveIndex()
         }
+        // 歌词异步到达时立即定位当前行，避免暂停状态下整页空白
+        .onChange(of: lines.count) { _ in tick = player.currentTime; driveIndex() }
         .onDisappear { setLyricsLandscape(false); setLyricsIdle(false) }
         .modifier(LyricsChromeAutoHide(visible: $chromeVisible))
     }
@@ -1339,6 +1372,7 @@ struct AIDirectorLyricsView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 18) {
                     Spacer().frame(height: safeTop + geo.size.height * 0.32)
+                    if lines.isEmpty { KXNoLyrics().frame(height: geo.size.height * 0.5) }
                     ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
                         aiLineCell(i, line).id(i)
                             .onTapGesture {
@@ -1403,18 +1437,24 @@ struct AIBackground: View {
         return z - floor(z)
     }
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1/30)) { tl in
+        // 静态渐变/颜色全部提到 TimelineView 外，避免 30fps 每帧重建 Gradient。
+        let glow = Gradient(colors: [Color(hue: 0.58, saturation: 0.8, brightness: 0.5).opacity(0.45), .clear])
+        let core = Gradient(colors: [Color.white.opacity(0.9), Color(hue: 0.55, saturation: 0.9, brightness: 1).opacity(0)])
+        let ray = Gradient(colors: [Color.white.opacity(0.06), Color.white.opacity(0.06)])
+        let rainbow = Gradient(colors: [Color.red, Color.orange, Color.yellow, Color.green, Color.blue, Color.purple]
+                                .map { $0.opacity(0.12) })
+        let shaftGrad = Gradient(colors: [Color(hue: 0.55, saturation: 0.9, brightness: 1).opacity(0.10), .clear])
+        let vig = Gradient(colors: [Color.clear, Color.black.opacity(0.55)])
+        return TimelineView(.animation(minimumInterval: 1/30)) { tl in
             Canvas { ctx, sz in
                 let t = tl.date.timeIntervalSince1970
                 // 基础辉光
-                let glow = Gradient(colors: [Color(hue: 0.58, saturation: 0.8, brightness: 0.5).opacity(0.45), .clear])
                 ctx.fill(Path(CGRect(origin: .zero, size: sz)),
                          with: .radialGradient(glow, center: CGPoint(x: sz.width * 0.5, y: sz.height * 0.5),
                                               startRadius: 0, endRadius: max(sz.width, sz.height) * 0.7))
                 ctx.blendMode = .plusLighter
                 // 左侧镜头光晕核心
                 let fx = sz.width * 0.12, fy = sz.height * 0.5
-                let core = Gradient(colors: [Color.white.opacity(0.9), Color(hue: 0.55, saturation: 0.9, brightness: 1).opacity(0)])
                 ctx.fill(Path(ellipseIn: CGRect(x: fx - 60, y: fy - 60, width: 120, height: 120)),
                          with: .radialGradient(core, center: CGPoint(x: fx, y: fy), startRadius: 0, endRadius: 70))
                 // 星芒（缓慢旋转）
@@ -1423,7 +1463,7 @@ struct AIBackground: View {
                     var p = Path()
                     p.move(to: CGPoint(x: fx, y: fy))
                     p.addLine(to: CGPoint(x: fx + Foundation.cos(a) * sz.width * 0.5, y: fy + Foundation.sin(a) * sz.height * 0.5))
-                    ctx.stroke(p, with: .linearGradient(Gradient(colors: [Color.white.opacity(0.06), Color.white.opacity(0.06)]),
+                    ctx.stroke(p, with: .linearGradient(ray,
                                                        startPoint: CGPoint(x: fx, y: fy), endPoint: CGPoint(x: fx + sz.width, y: fy)), lineWidth: 1)
                 }
                 // 彩虹光束（斜向，主）
@@ -1432,8 +1472,6 @@ struct AIBackground: View {
                 beam.addLine(to: CGPoint(x: sz.width, y: sz.height * 0.5))
                 beam.addLine(to: CGPoint(x: sz.width, y: sz.height * 0.62))
                 beam.addLine(to: CGPoint(x: 0, y: sz.height * 0.44))
-                let rainbow = Gradient(colors: [Color.red, Color.orange, Color.yellow, Color.green, Color.blue, Color.purple]
-                                        .map { $0.opacity(0.12) })
                 ctx.fill(beam, with: .linearGradient(rainbow, startPoint: CGPoint(x: 0, y: 0),
                                                     endPoint: CGPoint(x: sz.width, y: sz.height)))
                 // 体积光束（更宽更柔，缓慢横移）
@@ -1443,7 +1481,7 @@ struct AIBackground: View {
                 shaft.addLine(to: CGPoint(x: sz.width, y: sz.height * (0.34 + off)))
                 shaft.addLine(to: CGPoint(x: sz.width, y: sz.height * (0.52 + off)))
                 shaft.addLine(to: CGPoint(x: 0, y: sz.height * (0.36 + off)))
-                ctx.fill(shaft, with: .linearGradient(Gradient(colors: [Color(hue: 0.55, saturation: 0.9, brightness: 1).opacity(0.10), .clear]),
+                ctx.fill(shaft, with: .linearGradient(shaftGrad,
                                                      startPoint: CGPoint(x: 0, y: sz.height * 0.3),
                                                      endPoint: CGPoint(x: 0, y: sz.height * 0.5)))
                 // 漂浮光尘（带闪烁）
@@ -1461,7 +1499,6 @@ struct AIBackground: View {
                 }
                 ctx.blendMode = .normal
                 // 暗角（电影感）
-                let vig = Gradient(colors: [Color.clear, Color.black.opacity(0.55)])
                 ctx.fill(Path(CGRect(origin: .zero, size: sz)),
                          with: .radialGradient(vig, center: CGPoint(x: sz.width * 0.5, y: sz.height * 0.5),
                                               startRadius: min(sz.width, sz.height) * 0.28,
@@ -1498,6 +1535,14 @@ fileprivate struct AILightLine: View {
             ? Text(line.text.isEmpty ? "·" : line.text)
             : line.words.reduce(Text("")) { acc, w in acc + Text(w.text).foregroundColor(wColor(w)) }
     }
+    /// mask 必须用不透明的纯文本。此前用带逐字前景色（含 opacity）的 base 当 mask，
+    /// 半透明的字会把扫光一起裁掉，看起来就是「有些字不显示」。
+    private var plain: Text {
+        let s = line.words.isEmpty
+            ? (line.text.isEmpty ? "·" : line.text)
+            : line.words.map { $0.text }.joined()
+        return Text(s)
+    }
     var body: some View {
         let font = KXFont.scaled(active ? 30 : 20, weight: .bold)
         return ZStack {
@@ -1513,7 +1558,7 @@ fileprivate struct AILightLine: View {
                             .offset(x: sweep * 360)
                             .blendMode(.plusLighter)
                     )
-                    .mask(base.font(font))
+                    .mask(plain.font(font))
                     .onAppear {
                         // 「减少动态效果」开启时不做无限扫光
                         guard !reduceMotion else { return }
@@ -1572,6 +1617,10 @@ struct MiSideLyricsView: View {
             tick = nt
             drive()
         }
+        .onChange(of: lines.count) { _ in
+            tick = player.currentTime
+            activeIndex = findIndex(tick)
+        }
         .onDisappear { fallTimer?.invalidate(); setLyricsLandscape(false); setLyricsIdle(false) }
         .modifier(LyricsChromeAutoHide(visible: $chromeVisible))
     }
@@ -1579,12 +1628,7 @@ struct MiSideLyricsView: View {
     private func stage(_ geo: GeometryProxy, spawnY: CGFloat, groundY: CGFloat) -> some View {
         ZStack {
             if lines.isEmpty {
-                VStack(spacing: 10) {
-                    KXIcon(icon: .note, size: 30, color: .white.opacity(0.5))
-                    Text("暂无歌词").font(.subheadline).opacity(0.6)
-                    Text("纯音乐，请欣赏").font(.caption).opacity(0.4)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                KXNoLyrics()
             } else {
                 if fallingIndex >= 0, fallingIndex < lines.count {
                     VStack(spacing: 6) {
@@ -1597,6 +1641,7 @@ struct MiSideLyricsView: View {
                                 .foregroundColor(.white.opacity(0.5 * fallOpacity))
                         }
                     }
+                    .modifier(KXLyricWidth(total: geo.size.width, side: 28))
                     .position(x: geo.size.width / 2,
                               y: spawnY + (groundY - spawnY) * fallProgress)
                     .rotationEffect(.degrees(fallRot))
@@ -1618,6 +1663,7 @@ struct MiSideLyricsView: View {
                                 .minimumScaleFactor(1.0)
                         }
                     }
+                    .modifier(KXLyricWidth(total: geo.size.width, side: 28))
                     .position(x: geo.size.width / 2, y: spawnY)
                 }
             }
@@ -1648,14 +1694,17 @@ struct MiSideLyricsView: View {
             .drawingGroup()
     }
 
-    /// 打字机逐字浮现：每字按其歌词绝对时间出现（未出现用透明前景，保留布局占位）
+    /// 打字机逐字浮现：未到的字用低亮度而不是全透明。
+    /// 全透明 + 逐字时间戳一旦错位（或逐字解析失败）整句就完全消失，只剩下面的中文翻译，
+    /// 这正是「英文歌只显示中文翻译」在界面上的表现；主句现在任何时候都完整可读。
     private func typewriterText(_ line: LyricLine) -> Text {
         if line.words.isEmpty {
             return Text(line.text.isEmpty ? "·" : line.text)
         }
         return line.words.reduce(Text("")) { acc, w in
             let appeared = tick >= w.time
-            return acc + Text(w.text).foregroundColor(appeared ? .white : .clear)
+            return acc + Text(w.text)
+                .foregroundColor(appeared ? .white : .white.opacity(0.32))
         }
     }
 
@@ -1671,7 +1720,8 @@ struct MiSideLyricsView: View {
         }
         if activeIndex >= 0, tick >= lineEndTime(activeIndex), activeIndex != fallingIndex {
             triggerFall(activeIndex)
-            activeIndex = -1
+            // 不要把 activeIndex 置 -1：两句之间的空档会让主歌词整块消失，
+            // 用户看到的是「歌词忽然不显示」。保持上一句直到下一句接管。
         }
     }
 
@@ -1768,7 +1818,7 @@ struct BounceLyricsView: View {
             ZStack(alignment: .top) {
                 backgroundLayer(geo.size)
                 shadeLayer(geo.size)
-                stage(geo)
+                if lines.isEmpty { KXNoLyrics() } else { stage(geo) }
                 topBar
             }
             .frame(width: geo.size.width, height: geo.size.height)
@@ -1783,6 +1833,7 @@ struct BounceLyricsView: View {
             tick = nt
             drive()
         }
+        .onChange(of: lines.count) { _ in tick = player.currentTime; activeIndex = findIndex(tick) }
         .onDisappear { setLyricsLandscape(false); setLyricsIdle(false) }
         .modifier(LyricsChromeAutoHide(visible: $chromeVisible))
     }
@@ -1807,8 +1858,11 @@ struct BounceLyricsView: View {
                     .scaleEffect(0.82)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        // 顺序不能反：先 padding 再撑满 frame。旧写法先 frame(.infinity) 再 padding(30)，
+        // 内层 BounceFlow 会按「全屏宽」换行，外层又向内缩 30pt，整块被居中后左侧溢出 30pt，
+        // 正好切掉每行第一个字符（"come over…" 显示成 "ome over…"）。
         .padding(.horizontal, 30)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .id(activeIndex)
         .transition(.opacity)
         .animation(.easeInOut(duration: 0.3), value: activeIndex)
@@ -1818,12 +1872,30 @@ struct BounceLyricsView: View {
         BounceLine(line: line, words: effectiveWords(for: line), tick: tick, fontSize: fontSize)
     }
 
-    // 没有逐字时间轴(yrc)的句子，按字符拆开并沿本句时长均匀分配时间，
-    // 复用逐字弹跳管线，使“单独文字”也有逐字蹦出的效果（与有翻译/有 yrc 的歌一致）
+    /// 无逐字时间轴时按「词」分块：英文按单词（含尾随空格）避免流式布局在单词中间断行，
+    /// 中文逐字。之前逐字符拆英文长句会被 BounceFlow 从任意字母处折行，看起来就是「变形」。
+    private func lyricTokens(_ s: String) -> [String] {
+        var out: [String] = []
+        var buf = ""
+        for ch in s {
+            let han = ch.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) }
+            if han {
+                if !buf.isEmpty { out.append(buf); buf = "" }
+                out.append(String(ch))
+            } else {
+                buf.append(ch)
+                if ch == " " { out.append(buf); buf = "" }
+            }
+        }
+        if !buf.isEmpty { out.append(buf) }
+        return out
+    }
+
+    // 没有逐字时间轴(yrc)的句子，沿本句时长均匀分配时间，复用逐字弹跳管线
     private func effectiveWords(for line: LyricLine) -> [LyricWord] {
         if !line.words.isEmpty { return line.words }
-        let chars = Array(line.text)
-        guard !chars.isEmpty else { return [] }
+        let tokens = lyricTokens(line.text)
+        guard !tokens.isEmpty else { return [] }
         let start = line.time
         let end: Double
         if activeIndex + 1 < lines.count {
@@ -1832,20 +1904,15 @@ struct BounceLyricsView: View {
             end = max(player.duration > 0 ? player.duration : line.time + 6, line.time + 4)
         }
         let span = max(end - start, 0.5)
-        let per = span / Double(chars.count)
-        return chars.enumerated().map { i, c in
-            LyricWord(time: start + per * Double(i), duration: per, text: String(c))
+        let per = span / Double(tokens.count)
+        return tokens.enumerated().map { i, tk in
+            LyricWord(time: start + per * Double(i), duration: per, text: tk)
         }
     }
 
     private func lineText(_ line: LyricLine, size: CGFloat = 22) -> some View {
-        Group {
-            if line.words.isEmpty {
-                Text(line.text.isEmpty ? "·" : line.text)
-            } else {
-                Text(line.words.map { $0.text }.joined())
-            }
-        }
+        // 前后句始终用 lrc 原文：逐字 words 可能缺空格或与原文不符
+        Text(line.text.isEmpty ? "·" : line.text)
         .font(KXFont.scaled(size, weight: .semibold))
         .foregroundColor(.white)
         .lineLimit(nil)
@@ -1912,10 +1979,10 @@ struct BounceLyricsView: View {
         @State private var shown = false
         var body: some View {
             Text(text)
-                .scaleEffect(shown ? 1 : 0.92)
-                .offset(y: shown ? 0 : 10)
-                .opacity(shown ? 1 : 0.32)
-                .blur(radius: shown ? 0 : 1.5)
+                .scaleEffect(shown ? 1 : 0.96)
+                .offset(y: shown ? 0 : 6)
+                // 未唱到的字保持可读：全暗 + 模糊会让英文歌只剩静态的中文翻译清晰可见
+                .opacity(shown ? 1 : 0.62)
                 .animation(.interpolatingSpring(stiffness: 380, damping: 15), value: shown)
                 .onChange(of: appeared) { if $0 { shown = true } }
                 .onAppear { if appeared { shown = true } }
@@ -1924,8 +1991,17 @@ struct BounceLyricsView: View {
 
     // 逐字流式布局（自动换行），子视图自行负责弹跳 transform（基于槽位，不挤占布局）
     private struct BounceFlow: Layout {
+        /// sizeThatFits 与 placeSubviews 必须共用同一个换行基准，且宽度必须是有限值；
+        /// proposal 为 .infinity 时按屏幕宽度兜底，否则整句不换行并被居中裁掉两端。
+        private static func flowWidth(_ w: CGFloat?) -> CGFloat {
+            let raw = w ?? (UIScreen.main.bounds.width - 60)
+            return raw.isFinite ? max(120, raw) : (UIScreen.main.bounds.width - 60)
+        }
+
         func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-            let maxW = proposal.width ?? .infinity
+            // 必须给有限宽度：nil 时按 .infinity 计算会返回「整句不断行」的宽度，
+            // placeSubviews 又拿 bounds.width 重新折行，两处基准不一致 → 第二行被裁掉。
+            let maxW = Self.flowWidth(proposal.width)
             let spacing: CGFloat = 3
             var x: CGFloat = 0, y: CGFloat = 0, lineH: CGFloat = 0, totalH: CGFloat = 0
             for s in subviews {
@@ -1935,14 +2011,16 @@ struct BounceLyricsView: View {
                 lineH = max(lineH, sz.height)
                 totalH = max(totalH, y + lineH)
             }
-            return CGSize(width: min(maxW, max(x - spacing, 0)), height: totalH)
+            // 返回固定宽度（而不是实际内容宽度），保证 place 阶段用同一换行基准
+            return CGSize(width: maxW, height: max(totalH, 1))
         }
         func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
             let spacing: CGFloat = 3
+            let maxW = min(bounds.width, Self.flowWidth(proposal.width))
             var x: CGFloat = 0, y: CGFloat = 0, lineH: CGFloat = 0
             for s in subviews {
                 let sz = s.sizeThatFits(.unspecified)
-                if x + sz.width > bounds.width, x > 0 { y += lineH; x = 0; lineH = 0 }
+                if x + sz.width > maxW, x > 0 { y += lineH; x = 0; lineH = 0 }
                 s.place(at: CGPoint(x: bounds.minX + x, y: bounds.minY + y), anchor: .topLeading, proposal: .unspecified)
                 x += sz.width + spacing
                 lineH = max(lineH, sz.height)
@@ -1964,7 +2042,8 @@ struct BounceLyricsView: View {
             let mid = (lo + hi) / 2
             if ls[mid].time <= t { found = mid; lo = mid + 1 } else { hi = mid - 1 }
         }
-        return found
+        // 歌曲前奏（t 小于第一行时间）时不能返回 -1，否则整屏一个字都不画
+        return found < 0 ? 0 : found
     }
 
     private func backgroundLayer(_ size: CGSize) -> some View {
@@ -2046,9 +2125,6 @@ struct SongInfoSheet: View {
                     }
                 } header: {
                     Text("播放")
-                } footer: {
-                    Text("档位在「设置」里切换，下一首生效；VIP 歌曲上游只返回 128 kbps 试听片段。")
-                        .font(.caption2)
                 }
 
                 Section {
@@ -2077,7 +2153,7 @@ struct SongInfoSheet: View {
                                 Task { await createPlaylist(addCurrentSong: true) }
                             }
                         } message: {
-                            Text("会在已连接的网易云账号里真实创建歌单；选「创建并加入这首歌」会再写入当前歌曲。")
+                            Text("将在已连接的网易云账号中创建歌单。")
                         }
                     }
                     if !auth.ncmBound {
@@ -2114,13 +2190,8 @@ struct SongInfoSheet: View {
                 } header: {
                     Text("加入歌单")
                 } footer: {
-                    Text("只显示你创建的歌单：网易云不支持往收藏的他人歌单里加歌。加入会真实写入你的账号，在网易云 App 里也能看到。")
+                    Text("只显示你创建的歌单")
                         .font(.caption2)
-                }
-
-                Section {
-                    Text("音源由 Mac 上的 server.py 转发，手机需与 Mac 处于同一 Wi-Fi。")
-                        .font(.caption2).foregroundColor(.secondary)
                 }
             }
             .navigationTitle("歌曲信息")
@@ -2132,7 +2203,7 @@ struct SongInfoSheet: View {
             }
             .task { await load() }
             .alert("加入歌单", isPresented: Binding<Bool>(
-                get: { addNotice != nil },
+                get: { addNotice.map(KXNeedsAttention) ?? false },
                 set: { if !$0 { addNotice = nil } }
             )) {
                 Button("好", role: .cancel) { }
@@ -2180,7 +2251,8 @@ struct SongInfoSheet: View {
     }
 
     private func load() async {
-        if auth.ncmBound { await auth.loadNCMPlaylists() }
+        // 只在缓存为空时拉取，避免每次打开都消耗共享网易云会话的限流额度
+        if auth.ncmBound, auth.ncmPlaylists.isEmpty { await auth.loadNCMPlaylists() }
         guard let id = song?.ncmID, !id.isEmpty else { quality = "本地曲目"; return }
         do {
             let r = try await APIClient.resolve(songID: id)
@@ -2206,7 +2278,7 @@ struct SongInfoSheet: View {
         addingPID = pl.id
         do {
             try await APIClient.ncmAddToPlaylist(pid: pl.id, songID: id)
-            addNotice = "已加入「\(pl.name)」"
+            addNotice = nil      // 成功不弹提示，按钮上的加载态结束 + 云端歌单已更新即为反馈
         } catch {
             addNotice = "加入失败：\(error.localizedDescription)"
         }
@@ -2233,7 +2305,7 @@ struct SongInfoSheet: View {
                     do {
                         try await APIClient.ncmAddToPlaylist(pid: pid, songID: id)
                         await auth.loadNCMPlaylists()
-                        addNotice = "已创建「\(name)」并加入这首歌"
+                        addNotice = nil
                     } catch {
                         addNotice = "歌单「\(name)」已创建，但加入歌曲失败：\(error.localizedDescription)"
                     }
@@ -2241,7 +2313,7 @@ struct SongInfoSheet: View {
                     addNotice = "歌单「\(name)」已创建，但这首歌没有网易云 ID，无法自动加入"
                 }
             } else {
-                addNotice = "已创建歌单「\(name)」，点列表中的「加入」可添加这首歌"
+                addNotice = nil
             }
         } catch {
             addNotice = "创建失败：\(error.localizedDescription)"
@@ -2274,9 +2346,9 @@ private struct RotatingAlbumCover: View {
                 .frame(width: 286, height: 286)
         }
         .onReceive(ticker) { now in
-            let dt = now.timeIntervalSince(last)
-            last = now
             guard isPlaying, !reduceMotion else { return }
+            let dt = min(max(0, now.timeIntervalSince(last)), 0.1)
+            last = now
             accumulated += degPerSec * dt
             if accumulated >= 360 { accumulated -= 360 }
         }
