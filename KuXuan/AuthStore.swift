@@ -243,13 +243,31 @@ final class AuthStore: ObservableObject {
     @MainActor
     func bindSoda(cookie: String) async -> Bool {
         do {
-            let ok = try await APIClient.sodaBind(cookie: cookie)
+            let ok = try await APIClient.sodaBind(cookie: Self.cleanCookie(cookie))
             if ok { await refreshSoda() }
             return ok
         } catch {
             lastError = "汽水绑定失败：\(error.localizedDescription)"
             return false
         }
+    }
+
+    /// 清理用户粘贴的 Cookie：去掉 "Cookie:" / "cookie:" 前缀、首尾空白与换行，
+    /// 避免从抓包工具直接整行复制时把请求头前缀一并提交导致绑定失败。
+    private static func cleanCookie(_ raw: String) -> String {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let range = s.range(of: "ookie:", options: .caseInsensitive),
+           range.upperBound > s.startIndex,
+           s[s.index(before: range.lowerBound)] == "C" || s[s.index(before: range.lowerBound)] == "c" {
+            s = String(s[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        // 行内若有换行，取第一段非空内容
+        if s.contains("\n") {
+            s = s.components(separatedBy: .newlines)
+                  .map { $0.trimmingCharacters(in: .whitespaces) }
+                  .first { !$0.isEmpty } ?? s
+        }
+        return s
     }
 
     @MainActor
