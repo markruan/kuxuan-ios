@@ -1,21 +1,43 @@
 import SwiftUI
 
 /// 歌手页（中等丰富度）入口：由 RootView 的 fullScreenCover(item: $player.artistToShow) 承接。
-/// 内部用 NavigationStack(path:) 支持「点相似歌手 → 层层下钻」到另一个歌手页。
+///
+/// 点「相似歌手」不再用 NavigationStack(path:) push：push 会额外叠一层系统返回箭头，
+/// 和自定义「关闭」「返回上一个歌手」凑成三个返回控件，且要逐层 pop 才能退出浮层。
+/// 改为**同一个页面内替换当前歌手**：内部只维护一个歌手栈，浮层永远只有一层。
+///  · 根歌手：左上只有「关闭歌手页」
+///  · 下钻后：左上「返回上一个歌手」+ 右上「关闭」（任意深度都能一步退出浮层）
+/// 顶部下滑手势始终是「关闭整个歌手页」，与栈深无关。
 struct ArtistView: View {
     @EnvironmentObject var player: PlayerEngine
     @EnvironmentObject var auth: AuthStore
     let mini: MiniArtist
 
-    @State private var path: [MiniArtist] = []
+    /// 已下钻的歌手（不含根歌手 mini）。栈顶即当前展示的歌手。
+    @State private var stack: [MiniArtist] = []
+
+    private var current: MiniArtist { stack.last ?? mini }
 
     var body: some View {
-        NavigationStack(path: $path) {
-            ArtistDetailContent(mini: mini, path: $path)
-                .navigationDestination(for: MiniArtist.self) { a in
-                    ArtistDetailContent(mini: a, path: $path)
+        ArtistDetailContent(
+            mini: current,
+            canGoBack: !stack.isEmpty,
+            onBack: { if !stack.isEmpty { stack.removeLast() } },
+            onClose: { player.artistToShow = nil },
+            onOpenArtist: { a in
+                // 点回根歌手 / 已访问过的歌手时直接回到那一层，避免 A→B→A 无限加深，
+                // 也避免用户为了退出而反复按返回。
+                if a.id == mini.id {
+                    stack = []
+                } else if let idx = stack.firstIndex(where: { $0.id == a.id }) {
+                    stack = Array(stack.prefix(through: idx))
+                } else {
+                    stack.append(a)
                 }
-        }
+            }
+        )
+        // 换歌手时重建正文：@State（详情/歌曲/滚动态）随之重置，.task 重新拉数据。
+        .id(current.id)
         // 收藏歌手的提示浮层：歌手页是全屏浮层，会盖住播放页的 toast，这里单独挂一份
         .overlay(alignment: .top) {
             FavSyncToast().padding(.top, 52)
@@ -37,7 +59,11 @@ struct ArtistDetailContent: View {
     @EnvironmentObject var player: PlayerEngine
     @EnvironmentObject var auth: AuthStore
     let mini: MiniArtist
-    @Binding var path: [MiniArtist]
+    /// 是否处于下钻层（决定左上按钮是「返回」还是「关闭」）
+    let canGoBack: Bool
+    let onBack: () -> Void
+    let onClose: () -> Void
+    let onOpenArtist: (MiniArtist) -> Void
 
     @State private var detail: KBArtistDetail?
     @State private var songs: [Song] = []
@@ -89,16 +115,27 @@ struct ArtistDetailContent: View {
         .task { await load() }
     }
 
-    // MARK: 顶部栏：收起整页 + （下钻后）返回上一层
+    // MARK: 顶部栏：始终只有一个「返回/关闭」主按钮；下钻层额外给一个明确的「关闭」
+    /// 主按钮语义随层级变化，避免同屏出现多个返回箭头；右侧的「关闭」不是返回，
+    /// 无论下钻多少层都能一步退出整个歌手浮层。
     private var topBar: some View {
         HStack(spacing: 12) {
-            KXModalCloseButton(label: "关闭歌手页", hint: "返回上一页", color: .primary) {
-                player.artistToShow = nil
+            if canGoBack {
+                KXIconButton(icon: .chevronLeft, label: "返回上一个歌手",
+                             hint: "回到刚才的歌手页", size: 20, color: .primary) {
+                    onBack()
+                }
+            } else {
+                KXModalCloseButton(label: "关闭歌手页", hint: "返回播放页", color: .primary) {
+                    onClose()
+                }
             }
             Spacer()
-            if !path.isEmpty {
-                KXIconButton(icon: .chevronLeft, label: "返回上一个歌手",
-                             size: 20, color: .primary) { path.removeLast() }
+            if canGoBack {
+                KXIconButton(icon: .close, label: "关闭歌手页",
+                             hint: "退出整个歌手页，返回播放页", size: 18, color: .primary) {
+                    onClose()
+                }
             }
         }
         .padding(.horizontal, 8)
@@ -169,7 +206,7 @@ struct ArtistDetailContent: View {
             Button {
                 guard !songs.isEmpty else { return }
                 player.playSongs(songs, index: 0)
-                player.artistToShow = nil   // 收起歌手页，露出全屏播放器
+                onClose()   // 收起歌手页，露出全屏播放器
             } label: {
                 HStack(spacing: 6) {
                     KXIcon(icon: .play, size: 16, color: .white)
@@ -198,7 +235,7 @@ struct ArtistDetailContent: View {
                     ForEach(Array(songs.enumerated()), id: \.element.id) { i, s in
                         Button {
                             player.playSongs(songs, index: i)
-                            player.artistToShow = nil
+                            onClose()
                         } label: {
                             HStack(spacing: 12) {
                                 KXCover(url: APIClient.coverURL(s.cover, size: 120))
@@ -228,16 +265,19 @@ struct ArtistDetailContent: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
                     ForEach(similar) { a in
-                        Button { path.append(a) } label: {
+                        Button { onOpenArtist(a) } label: {
                             VStack(spacing: 6) {
                                 KXCover(url: APIClient.coverURL(a.cover, size: 140))
                                     .frame(width: 74, height: 74)
                                     .clipShape(Circle())
                                 Text(a.name).font(.caption).lineLimit(1)
                                     .frame(width: 74)
+                                    .foregroundColor(.primary)
                             }
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("查看相似歌手 \(a.name)")
+                        .accessibilityHint("在当前歌手页切换，不会新开一层页面")
                     }
                 }
                 .padding(.horizontal, 2)
