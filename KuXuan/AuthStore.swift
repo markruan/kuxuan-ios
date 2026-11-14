@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 import UIKit
 
-/// 账号状态中心：本地账号体系 + 网易云扫码绑定。
+/// 账号状态中心：本地账号体系 + 云村扫码绑定。
 /// 不标 @MainActor 是为了让 App 里的 @StateObject 初始化不被 actor 隔离限制；
 /// 所有会写 @Published 的方法都显式标 @MainActor。
 final class AuthStore: ObservableObject {
@@ -138,7 +138,7 @@ final class AuthStore: ObservableObject {
         }
     }
 
-    // MARK: - 网易云
+    // MARK: - 云村
     @MainActor
     func refreshNCM(minInterval: TimeInterval = 3) async {
         let now = Date()
@@ -152,7 +152,7 @@ final class AuthStore: ObservableObject {
             ncmProfile = me.profile
             if me.bound {
                 // 绑定态是唯一真相源。后端有独立监控线程，扫码确认后会把 cookie 落库；
-                // 客户端可能因为切到网易云 App 被挂起而错过那一次 803 轮询，
+                // 客户端可能因为切到云村 App 被挂起而错过那一次 803 轮询，
                 // 所以只要 /ncm/me 已绑定，二维码页也要立刻同步成成功态。
                 if !qrKey.isEmpty, !qrBound, !qrWasBoundAtStart {
                     qrBound = true
@@ -210,6 +210,11 @@ final class AuthStore: ObservableObject {
     @Published var sodaPlaylists: [SodaPlaylist] = []
     @Published var sodaPlaylistsLoaded = false
     @Published var sodaRecommend: [Song] = []
+    // 汽水扫码登录状态
+    @Published var sodaQrToken: String = ""
+    @Published var sodaQrImage: UIImage?
+    @Published var sodaQrMessage: String = ""
+    @Published var sodaQrBound: Bool = false
 
     @MainActor
     func refreshSoda() async {
@@ -293,7 +298,7 @@ final class AuthStore: ObservableObject {
             let uri = try await APIClient.ncmQRCreate(key: key)
             qrKey = key
             qrImage = APIClient.imageFromDataURI(uri)
-            qrMessage = qrImage == nil ? "二维码生成失败，请重试" : "请用网易云 App 扫码并确认"
+            qrMessage = qrImage == nil ? "二维码生成失败，请重试" : "请用云村 App 扫码并确认"
         } catch {
             qrMessage = "二维码获取失败：\(error.localizedDescription)"
         }
@@ -319,6 +324,44 @@ final class AuthStore: ObservableObject {
             }
         } catch {
             qrMessage = "状态查询失败：\(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - 汽水扫码登录
+    @MainActor
+    func startSodaQR() async {
+        sodaQrBound = false
+        sodaQrImage = nil
+        sodaQrMessage = "正在获取二维码…"
+        do {
+            let (token, qrimg) = try await APIClient.sodaQRCreate()
+            guard !token.isEmpty else { sodaQrMessage = "获取二维码失败：token 为空"; return }
+            sodaQrToken = token
+            sodaQrImage = APIClient.imageFromDataURI(qrimg)
+            sodaQrMessage = sodaQrImage == nil ? "二维码生成失败，请重试" : "请用汽水音乐 App 扫码并确认"
+        } catch {
+            sodaQrMessage = "二维码获取失败：\(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    func pollSodaQR() async {
+        guard !sodaQrToken.isEmpty, !sodaQrBound else { return }
+        do {
+            let (status, message, _) = try await APIClient.sodaQRCheck(token: sodaQrToken)
+            sodaQrMessage = message.isEmpty ? "等待扫码…" : message
+            switch status {
+            case "expired":
+                sodaQrMessage = "二维码已过期，请点击刷新"
+            case "success":
+                sodaQrBound = true
+                sodaQrMessage = "登录成功"
+                await refreshSoda()
+            default:
+                break
+            }
+        } catch {
+            sodaQrMessage = "状态查询失败：\(error.localizedDescription)"
         }
     }
 }
