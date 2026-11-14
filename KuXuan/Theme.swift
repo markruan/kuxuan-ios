@@ -78,6 +78,10 @@ extension View {
 /// 只有异常 / 需要用户决策的文案才允许用 toast / alert 打断操作。
 /// 「已收藏」「已创建」「评论已发布」这类成功反馈，界面状态本身已经表达，
 /// 再弹一条属于对用户无用的提醒。
+///
+/// 注意：纯"状态告知"类（如「本地曲目仅保存在本机」）不属于成功冗余、也不属于异常，
+/// 但承载了"未同步云端"这一用户必须知道的信息，应当正常弹出——因此本函数只用于
+/// 由 UI 状态已表达的成功确认才走抑制逻辑，FavSyncToast 不再对它做关键词过滤。
 func KXNeedsAttention(_ s: String) -> Bool {
     let keys = ["失败", "还原", "未连接", "未绑定", "无法", "请先", "不支持", "不能"]
     return keys.contains { s.contains($0) }
@@ -86,10 +90,11 @@ func KXNeedsAttention(_ s: String) -> Bool {
 // MARK: - 收藏云同步短提示
 struct FavSyncToast: View {
     @EnvironmentObject var player: PlayerEngine
+    // 注意：成功类提示（已收藏 / 已加入等）在 PlayerEngine 来源处已设为不弹，
+    // 这里只负责"有消息就展示"。关键词闸门会让「本地曲目仅保存在本机」这类
+    // 有用告知被误伤，故不再过滤——保留的异常/决策提示照常由各自文案带出。
     private var message: String? {
-        let m = player.favArtistNotice ?? player.favNotice
-        guard let m, KXNeedsAttention(m) else { return nil }
-        return m
+        player.favArtistNotice ?? player.favNotice
     }
     var body: some View {
         Group {
