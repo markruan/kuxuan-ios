@@ -2169,6 +2169,8 @@ struct SongInfoSheet: View {
     @State private var commentCount: Int?
     @State private var addingPID: String?
     @State private var addNotice: String?
+    /// 加入歌单 / 新建歌单成功的轻量确认（与错误提示 addNotice 分开：错误走 alert，成功走顶部 toast）。
+    @State private var successToast: String?
     @State private var showCreatePlaylist = false
     @State private var newPlaylistName = ""
     @State private var creatingPlaylist = false
@@ -2295,6 +2297,10 @@ struct SongInfoSheet: View {
             } message: {
                 Text(addNotice ?? "")
             }
+            .overlay(alignment: .top) {
+                KXSuccessToast(message: $successToast)
+                    .padding(.top, 64)
+            }
         }
     }
 
@@ -2363,7 +2369,7 @@ struct SongInfoSheet: View {
         addingPID = pl.id
         do {
             try await APIClient.ncmAddToPlaylist(pid: pl.id, songID: id)
-            addNotice = nil      // 成功不弹提示，按钮上的加载态结束 + 云端歌单已更新即为反馈
+            successToast = "已加入歌单「\(pl.name)」"   // 成功确认提示（错误才走 alert）
         } catch {
             addNotice = "加入失败：\(error.localizedDescription)"
         }
@@ -2390,7 +2396,7 @@ struct SongInfoSheet: View {
                     do {
                         try await APIClient.ncmAddToPlaylist(pid: pid, songID: id)
                         await auth.loadNCMPlaylists()
-                        addNotice = nil
+                        successToast = "歌单「\(name)」已创建，已加入当前歌曲"
                     } catch {
                         addNotice = "歌单「\(name)」已创建，但加入歌曲失败：\(error.localizedDescription)"
                     }
@@ -2398,7 +2404,7 @@ struct SongInfoSheet: View {
                     addNotice = "歌单「\(name)」已创建，但这首歌没有网易云 ID，无法自动加入"
                 }
             } else {
-                addNotice = nil
+                successToast = "歌单「\(name)」已创建"
             }
         } catch {
             addNotice = "创建失败：\(error.localizedDescription)"
