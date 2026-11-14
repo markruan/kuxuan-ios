@@ -4,7 +4,7 @@ import UIKit
 /// 这样中心光晕呈现的是专辑真实主色调，而不是封面的白边/黑边。
 func dominantColor(_ image: UIImage?) -> UIColor {
     guard let image = image,
-          let cg = image.cgImage else {
+          image.cgImage != nil else {
         return UIColor(red: 0.20, green: 0.12, blue: 0.16, alpha: 1)
     }
     let size = CGSize(width: 32, height: 32)
