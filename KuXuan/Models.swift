@@ -34,7 +34,7 @@ struct Song: Identifiable, Equatable {
 }
 
 extension Song {
-    /// 可写入网易云「我喜欢的音乐」的真实歌曲 id。
+    /// 可写入云村「我喜欢的音乐」的真实歌曲 id。
     /// 后端 _norm_song 给所有在线歌曲统一加 "online:" 前缀（如 online:1964713291），
     /// 而上游 /like 只接受纯数字 id。此前 toggleFav 直接判断 song.id 是否纯数字，
     /// 结果所有在线歌曲都被误判为「本地曲目」，收藏只写本机 —— 即「假收藏」的根因。
@@ -179,7 +179,7 @@ func int64(_ v: Any?) -> Int64 {
 }
 
 /// 元信息行不是歌词（作词/作曲/编曲/制作人/by…）。
-/// 网易云把这类行也打上时间戳放在 lrc 最前面，不过滤会让全屏歌词前几秒
+/// 云村把这类行也打上时间戳放在 lrc 最前面，不过滤会让全屏歌词前几秒
 /// 全是「作词 : xxx」，看起来像「歌词不显示」。
 private func isLyricMetadata(_ s: String) -> Bool {
     let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -250,7 +250,7 @@ func parseLRC(_ text: String) -> [LyricLine] {
     return out.sorted { $0.time < $1.time }
 }
 
-// MARK: - 逐字歌词（网易云 yrc 增强格式）
+// MARK: - 逐字歌词（云村 yrc 增强格式）
 /// 线上 /lyric/new 实测格式（Yesterday / 4337372）：
 ///   [5340,7560](5340,1920,0)Yesterday(7260,1140,0), (8400,330,0)all ...
 /// 行首 [startMs,endMs] 是整行时间；括号内第一个数是**该字的绝对开始毫秒**，
@@ -404,7 +404,7 @@ struct AuthStatusResp {
     }
 }
 
-// MARK: - 网易云账号（/api/ncm/*）
+// MARK: - 云村账号（/api/ncm/*）
 struct NCMProfile {
     let uid: String
     let nickname: String
@@ -569,7 +569,7 @@ struct ArtistDetailResp {
     }
 }
 
-/// 收藏歌手列表（/api/ncm/artist/sublist），与网易云「关注」同步
+/// 收藏歌手列表（/api/ncm/artist/sublist），与云村「关注」同步
 struct FavArtistListResp {
     let ok: Bool
     let artists: [MiniArtist]
