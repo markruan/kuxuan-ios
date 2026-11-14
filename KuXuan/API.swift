@@ -376,6 +376,80 @@ struct APIClient {
         return (d["songs"] as? [[String: Any]] ?? []).map { Song(dict: $0) }
     }
 
+    /// 心动模式：网易云私人 FM（/personal/fm），返回一串可连续播放的推荐单曲。
+    /// 与 ncmDailyRecommend（recommend/songs）区分数据源；未绑定网易云时后端返回错误引导去绑定。
+    static func ncmHeartbeat() async throws -> [Song] {
+        let d = try await getJSON("/api/ncm/heartbeat")
+        return (d["songs"] as? [[String: Any]] ?? []).map { Song(dict: $0) }
+    }
+
+    // MARK: - 汽水音乐（个人测试，数据来自本地 soda-bridge → server.py /api/soda/*）
+    /// bridge 返回的歌曲字段是 name/artist/cover，而 Song(dict:) 读 title，这里统一映射到 title。
+    /// 同时给每条打上 `soda:<id>` 的 file 标识，PlayerEngine 据此走本地解密播放链路。
+    private static func sodaSongs(_ list: [[String: Any]]) -> [Song] {
+        list.map { m in
+            var d = m
+            let id = String(describing: m["id"] ?? "")
+            if d["title"] == nil, let n = m["name"] as? String { d["title"] = n }
+            d["file"] = "soda:\(id)"
+            d["online"] = false
+            return Song(dict: d)
+        }
+    }
+
+    /// 汽水解密音频地址：经 server.py 转发到本地 soda-bridge 的 /play/{id}（返回明文 m4a 字节）。
+    static func sodaPlayURL(_ id: String) -> URL? {
+        let base = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return URL(string: base + "/api/soda/play/" + id)
+    }
+
+    /// 探索模式 → 歌单列表：bridge 调 libresoda discover_mix(scene_mode_id)。
+    static func sodaModePlaylists(sceneModeId: String) async throws -> [SodaPlaylist] {
+        let d = try await getJSON("/api/soda/modes/\(sceneModeId)/playlists")
+        return (d["playlists"] as? [[String: Any]] ?? []).map { SodaPlaylist(dict: $0) }
+    }
+
+    static func sodaMe() async throws -> (bound: Bool, error: String?) {
+        let d = try await getJSON("/api/soda/me")
+        return (d["bound"] as? Bool ?? false, d["error"] as? String)
+    }
+
+    static func sodaBind(cookie: String) async throws -> Bool {
+        let d = try await request("/api/soda/set-cookie", method: "POST", body: ["cookie": cookie])
+        return d["ok"] as? Bool ?? false
+    }
+
+    /// 双卡「汽水·推荐音乐」直接播：bridge 取第一个推荐歌单的曲目
+    static func sodaRecommend() async throws -> [Song] {
+        let d = try await getJSON("/api/soda/recommend/tracks")
+        return sodaSongs(d["songs"] as? [[String: Any]] ?? [])
+    }
+
+    static func sodaModes() async throws -> [[String: Any]] {
+        let d = try await getJSON("/api/soda/modes")
+        return d["scenes"] as? [[String: Any]] ?? []
+    }
+
+    static func sodaMyPlaylists() async throws -> [[String: Any]] {
+        let d = try await getJSON("/api/soda/my-playlists")
+        return d["playlists"] as? [[String: Any]] ?? []
+    }
+
+    static func sodaCollected() async throws -> [[String: Any]] {
+        let d = try await getJSON("/api/soda/collected")
+        return d["items"] as? [[String: Any]] ?? []
+    }
+
+    static func sodaLiked() async throws -> [[String: Any]] {
+        let d = try await getJSON("/api/soda/liked")
+        return d["items"] as? [[String: Any]] ?? []
+    }
+
+    static func sodaPlaylistTracks(id: String) async throws -> [Song] {
+        let d = try await getJSON("/api/soda/playlist/\(id)/tracks")
+        return sodaSongs(d["songs"] as? [[String: Any]] ?? [])
+    }
+
     /// 新建网易云歌单（真实写入账号），返回歌单 id
     static func ncmCreatePlaylist(name: String, privacy: String = "0") async throws -> String {
         let enc = kxQueryEncode(name)
