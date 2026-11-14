@@ -89,7 +89,7 @@ struct CommentSheet: View {
             .task { await load(reset: true) }
             .refreshable { await load(reset: true) }
             .alert("评论", isPresented: Binding<Bool>(
-                get: { sendNotice != nil },
+                get: { sendNotice.map(KXNeedsAttention) ?? false },
                 set: { if !$0 { sendNotice = nil } }
             )) {
                 Button("好", role: .cancel) { }
@@ -122,22 +122,12 @@ struct CommentSheet: View {
                     .buttonStyle(.plain)
                 } else {
                     ProgressView().scaleEffect(0.8)
-                    Text("正在加载更多评论…")
-                        .font(.caption2).foregroundColor(.secondary)
                 }
                 Spacer()
             }
             .padding(.vertical, 10)
             .id("kx-page-\(offset)-\(latest.count)-\(moreError == nil)")
             .onAppear { Task { await loadMore() } }
-        } else if loadedOnce && !latest.isEmpty {
-            HStack {
-                Spacer()
-                Text("已经到底了 · 已加载 \(latest.count) 条")
-                    .font(.caption2).foregroundColor(.secondary)
-                Spacer()
-            }
-            .padding(.vertical, 10)
         }
     }
 
@@ -153,7 +143,7 @@ struct CommentSheet: View {
                     Spacer()
                     Button { replyTo = nil } label: {
                         KXIcon(icon: .close, size: 14, color: .secondary)
-                            .contentShape(Rectangle().inset(by: -14))
+                            .contentShape(Rectangle().inset(by: -16))
                             .accessibilityHidden(true)
                     }
                     .buttonStyle(.plain)
@@ -173,9 +163,9 @@ struct CommentSheet: View {
                     .onSubmit { Task { await send() } }
                     .disabled(!auth.ncmBound)
                 if !draft.isEmpty {
-                    Text("\(draft.count)/\(maxCommentLength)")
+                    Text("\(draftCount)/\(maxCommentLength)")
                         .font(.caption2)
-                        .foregroundColor(draft.count > maxCommentLength ? .red : .secondary)
+                        .foregroundColor(draftCount > maxCommentLength ? .red : .secondary)
                 }
                 Button { Task { await send() } } label: {
                     if sending {
@@ -201,10 +191,14 @@ struct CommentSheet: View {
         .overlay(alignment: .top) { Divider() }
     }
 
+    /// 与真正发送时的 trim 口径一致：140 个有效字 + 首尾空格不应被判超长
+    private var draftCount: Int {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines).count
+    }
+
     private var canSend: Bool {
         auth.ncmBound && !sending && !songID.isEmpty
-            && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && draft.count <= maxCommentLength
+            && draftCount > 0 && draftCount <= maxCommentLength
     }
 
     // MARK: 评论行（点回复图标进入回复态）
@@ -320,7 +314,7 @@ struct CommentSheet: View {
                                                commentID: replyTo?.id)
             draft = ""
             replyTo = nil
-            sendNotice = "评论已发布到网易云"
+            sendNotice = nil          // 成功不弹提示，输入框清空 + 列表刷新已是反馈
             await load(reset: true)
         } catch {
             sendNotice = "发布失败：\(error.localizedDescription)"
