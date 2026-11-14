@@ -22,6 +22,8 @@ struct AccountCenterView: View {
 
     @State private var showQR = false
     @State private var infoMessage: String?
+    /// 新建歌单成功的轻量确认（与错误提示 infoMessage 分开：错误走 alert，成功走顶部 toast）。
+    @State private var successToast: String?
     @State private var showCreatePlaylist = false
     @State private var newPlaylistName = ""
     @State private var creating = false
@@ -73,6 +75,10 @@ struct AccountCenterView: View {
                 Button("好", role: .cancel) { }
             } message: {
                 Text(infoMessage ?? "")
+            }
+            .overlay(alignment: .top) {
+                KXSuccessToast(message: $successToast)
+                    .padding(.top, 60)
             }
         }
     }
@@ -228,7 +234,7 @@ struct AccountCenterView: View {
         do {
             _ = try await APIClient.ncmCreatePlaylist(name: name)
             await auth.loadNCMPlaylists()
-            infoMessage = nil
+            successToast = "歌单「\(name)」已创建"
         } catch {
             infoMessage = "创建失败：\(error.localizedDescription)"
         }
