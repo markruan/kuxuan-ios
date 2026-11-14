@@ -178,6 +178,52 @@ func int64(_ v: Any?) -> Int64 {
     return 0
 }
 
+/// 元信息行不是歌词（作词/作曲/编曲/制作人/by…）。
+/// 网易云把这类行也打上时间戳放在 lrc 最前面，不过滤会让全屏歌词前几秒
+/// 全是「作词 : xxx」，看起来像「歌词不显示」。
+private func isLyricMetadata(_ s: String) -> Bool {
+    let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+    if t.isEmpty { return true }
+    let lower = t.lowercased()
+    let keys = ["作词", "作曲", "编曲", "制作人", "制作", "演唱", "出品", "监制",
+                "录音", "混音", "母带", "和声", "吉他", "钢琴",
+                "lyricist", "composer", "arranger", "producer", "written by",
+                "artist:", "album:", "by:", "offset:", "re:"]
+    for k in keys where lower.hasPrefix(k) { return true }
+    return false
+}
+
+private func isHanChar(_ c: Character) -> Bool {
+    c.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) }
+}
+private func isLatinChar(_ c: Character) -> Bool {
+    c.unicodeScalars.contains { (0x41...0x5A).contains($0.value) || (0x61...0x7A).contains($0.value) }
+}
+private func lyricNormalized(_ s: String) -> String {
+    s.lowercased().filter { $0.isLetter || $0.isNumber }
+}
+/// 1=以拉丁字母为主，-1=以汉字为主，0=混合/无字母。
+private func lyricLanguage(_ s: String) -> Int {
+    let han = s.reduce(0) { $0 + (isHanChar($1) ? 1 : 0) }
+    let latin = s.reduce(0) { $0 + (isLatinChar($1) ? 1 : 0) }
+    return latin > han ? 1 : (han > latin ? -1 : 0)
+}
+
+/// yrc 逐字内容是否就是这一行的原文。
+/// 上游对部分歌返回的 yrc 是「译文」或错行，直接拿它当主歌词会出现
+/// 「英文歌只显示中文翻译」；语言不一致或字符重合度过低时一律忽略逐字数据，
+/// 回退到 lrc 原文（逐字效果退化成整行，但内容一定正确）。
+private func wordsCompatible(_ words: [LyricWord], original: String) -> Bool {
+    let joined = words.map { $0.text }.joined()
+    guard !joined.isEmpty else { return false }
+    let a = lyricLanguage(original), b = lyricLanguage(joined)
+    if a != 0, b != 0, a != b { return false }
+    let na = Set(lyricNormalized(original)), nb = Set(lyricNormalized(joined))
+    guard !na.isEmpty, !nb.isEmpty else { return false }
+    let overlap = Double(na.intersection(nb).count) / Double(max(na.count, nb.count))
+    return overlap >= 0.45
+}
+
 func parseLRC(_ text: String) -> [LyricLine] {
     var out: [LyricLine] = []
     guard let re = try? NSRegularExpression(pattern: #"\[(\d+):(\d+)(?:[.:](\d+))?\]"#) else { return out }
@@ -198,14 +244,20 @@ func parseLRC(_ text: String) -> [LyricLine] {
         let txt = re.stringByReplacingMatches(in: raw,
                                               range: NSRange(location: 0, length: ns.length),
                                               withTemplate: "").trimmingCharacters(in: .whitespaces)
+        if isLyricMetadata(txt) { continue }
         for t in times { out.append(LyricLine(time: t, text: txt)) }
     }
     return out.sorted { $0.time < $1.time }
 }
 
 // MARK: - 逐字歌词（网易云 yrc 增强格式）
-/// yrc 形如：[0,1000](0,235,0)词(235,308,0)儿(543,344,0)啊
-/// 行内 [startMs,endMs] 为整行时间；每个 (relMs,durMs,0)词 为逐字相对时间+时长。
+/// 线上 /lyric/new 实测格式（Yesterday / 4337372）：
+///   [5340,7560](5340,1920,0)Yesterday(7260,1140,0), (8400,330,0)all ...
+/// 行首 [startMs,endMs] 是整行时间；括号内第一个数是**该字的绝对开始毫秒**，
+/// 不是相对行首的偏移。旧实现写成 (ls + rel)/1000，把每个字的时间往后推了一整行
+/// （5.34s 的字被算成 10.68s）：逐字染色/打字机永远判为「未到时间」→ 主句全透明，
+/// 只剩静态的中文翻译可见，也就是「英文歌只显示中文翻译」「有些歌词不显示」的根因。
+/// 头部常混有 JSON 元数据行 {"t":0,"c":[...]}，正则不匹配会自动跳过。
 func parseYRC(_ text: String) -> [(time: Double, words: [LyricWord])] {
     var out: [(Double, [LyricWord])] = []
     guard let lineRe = try? NSRegularExpression(pattern: #"\[(\d+),\d+\]([\s\S]*)"#),
@@ -220,12 +272,16 @@ func parseYRC(_ text: String) -> [(time: Double, words: [LyricWord])] {
         var words: [LyricWord] = []
         let bns = body as NSString
         for wm in wordRe.matches(in: body, range: NSRange(location: 0, length: bns.length)) {
-            let rel = Double(bns.substring(with: wm.range(at: 1))) ?? 0
+            let startMs = Double(bns.substring(with: wm.range(at: 1))) ?? 0
             let dur = Double(bns.substring(with: wm.range(at: 2))) ?? 0
+            // 上游把词间空格放在词块尾部："Yesterday" ", " "all " "my " …
+            // 这里绝不能 trim 掉空格，否则各模板 join 逐字词时会得到
+            // "Yesterday,allmytroublesseemedsofaraway" 这种英文单词全粘连的效果。
+            // 只去掉真正的换行/制表符，保留半角空格。
             let wtext = bns.substring(with: wm.range(at: 3))
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\n\r\t"))
             if wtext.isEmpty { continue }
-            words.append(LyricWord(time: (ls + rel) / 1000.0,
+            words.append(LyricWord(time: startMs / 1000.0,
                                   duration: dur / 1000.0,
                                   text: wtext))
         }
@@ -234,27 +290,74 @@ func parseYRC(_ text: String) -> [(time: Double, words: [LyricWord])] {
     return out
 }
 
+/// 兼容上游偶尔返回的「整段 JSON lines」逐字格式：
+///   {"t":5340,"c":[{"tx":"Yesterday","dt":1920},{"tx":", ","dt":1140}]}
+/// t 为整行绝对毫秒，dt 为每字时长，逐字起点按 t 累加。
+func parseYRCJSON(_ text: String) -> [(time: Double, words: [LyricWord])] {
+    var out: [(Double, [LyricWord])] = []
+    for raw in text.components(separatedBy: "\n") {
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard s.hasPrefix("{"), let data = s.data(using: .utf8),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let chunks = obj["c"] as? [[String: Any]] else { continue }
+        let tMs = (obj["t"] as? Double) ?? Double((obj["t"] as? Int) ?? 0)
+        guard tMs >= 0 else { continue }
+        var cursor = tMs
+        var words: [LyricWord] = []
+        for c in chunks {
+            guard let tx = c["tx"] as? String, !tx.isEmpty,
+                  !isLyricMetadata(tx) else { continue }
+            let dt = (c["dt"] as? Double) ?? Double((c["dt"] as? Int) ?? 0)
+            let dur = max(0, dt)
+            words.append(LyricWord(time: cursor / 1000.0,
+                                  duration: dur / 1000.0, text: tx))
+            cursor += dur
+        }
+        // 元数据行（作词/作曲…）也要挡掉，避免第一行被当成歌词
+        let joined = words.map { $0.text }.joined()
+        if !words.isEmpty, !isLyricMetadata(joined) {
+            out.append((tMs / 1000.0, words))
+        }
+    }
+    return out
+}
+
 /// 解析普通 LRC，再把逐字(yrc)与翻译(tlyric)按时间就近合并到各行。
+/// 三个保证：① 主行永远是原文（逐字内容与原文不符时丢弃逐字数据）；
+/// ② 翻译只作为次行，绝不与原文重复；③ lrc 只有元信息/为空时用译词兜底，不返回空白。
 func parseEnhancedLyrics(lrc: String, yrc: String, tlyric: String) -> [LyricLine] {
     var lines = parseLRC(lrc)
-    guard !lines.isEmpty else { return lines }
+    var translationSource = tlyric
+    if lines.isEmpty {
+        // 部分英文歌上游只给 tlyric（或 lrc 全是作词/作曲元信息），
+        // 此时把译词当主歌词，否则五个全屏模板都只会显示「暂无歌词」。
+        let fallback = parseLRC(tlyric)
+        if !fallback.isEmpty {
+            lines = fallback
+            translationSource = ""      // 已是译词，不再重复挂一遍翻译
+        }
+    }
+    guard !lines.isEmpty else { return [] }
 
     if !yrc.isEmpty {
-        let ylines = parseYRC(yrc)
+        var ylines = parseYRC(yrc)
+        if ylines.isEmpty { ylines = parseYRCJSON(yrc) }
         for i in lines.indices {
             if let best = ylines.min(by: {
                 abs($0.time - lines[i].time) < abs($1.time - lines[i].time)
-            }), abs(best.time - lines[i].time) < 0.6 {
+            }), abs(best.time - lines[i].time) < 0.8,
+               wordsCompatible(best.words, original: lines[i].text) {
                 lines[i].words = best.words
             }
         }
     }
-    if !tlyric.isEmpty {
-        let tl = parseLRC(tlyric)
+    if !translationSource.isEmpty {
+        let tl = parseLRC(translationSource)
         for i in lines.indices {
             if let best = tl.min(by: {
                 abs($0.time - lines[i].time) < abs($1.time - lines[i].time)
-            }), abs(best.time - lines[i].time) < 0.6 {
+            }), abs(best.time - lines[i].time) < 0.8,
+               lyricNormalized(best.text) != lyricNormalized(lines[i].text) {
                 lines[i].translation = best.text
             }
         }
