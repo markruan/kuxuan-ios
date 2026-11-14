@@ -188,7 +188,7 @@ enum KXIconName {
          refresh, download, warning, cloudCheck,
          play, pause, back, forward,
          repeatAll, repeatOne, shuffle, comment, more, flame, thumb,
-         plusCircle, send, reply, expand
+         plusCircle, send, reply, expand, clipboard
 }
 
 private func KXP(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x, y: y) }
@@ -427,6 +427,13 @@ struct KXIconShape: Shape {
             p.move(to: KXP(f, o)); p.addLine(to: KXP(g, o)); p.addLine(to: KXP(g, e))
             p.move(to: KXP(o, f)); p.addLine(to: KXP(o, g)); p.addLine(to: KXP(e, g))
             p.move(to: KXP(f, g)); p.addLine(to: KXP(g, g)); p.addLine(to: KXP(g, f))
+        case .clipboard:
+            p.move(to: KXP(5, 7)); p.addLine(to: KXP(5, 20))
+            p.addLine(to: KXP(19, 20)); p.addLine(to: KXP(19, 7))
+            p.addLine(to: KXP(16.5, 7)); p.addLine(to: KXP(16.5, 5.5))
+            p.addQuadCurve(to: KXP(7.5, 5.5), control: KXP(12, 3.2))
+            p.addLine(to: KXP(7.5, 7))
+            p.closeSubpath()
         }
         let tx = rect.minX + (rect.width - 24 * s) / 2
         let ty = rect.minY + (rect.height - 24 * s) / 2
