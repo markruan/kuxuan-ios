@@ -1,0 +1,158 @@
+{
+  "" : {
+    "diagnostics" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/KuXuan-master.dia",
+    "emit-module-dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/KuXuan-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/KuXuan-master-emit-module.dia",
+    "swift-dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/KuXuan-master.swiftdeps"
+  },
+  "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/KuXuan/AccountViews.swift" : {
+    "const-values" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/AccountViews.swiftconstvalues",
+    "dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/AccountViews.d",
+    "diagnostics" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/AccountViews.dia",
+    "index-unit-output-path" : "/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/AccountViews.o",
+    "llvm-bc" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/AccountViews.bc",
+    "object" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/AccountViews.o",
+    "swift-dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/AccountViews.swiftdeps",
+    "swiftmodule" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/AccountViews~partial.swiftmodule"
+  },
+  "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/KuXuan/API.swift" : {
+    "const-values" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/API.swiftconstvalues",
+    "dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/API.d",
+    "diagnostics" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/API.dia",
+    "index-unit-output-path" : "/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/API.o",
+    "llvm-bc" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/API.bc",
+    "object" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/API.o",
+    "swift-dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/API.swiftdeps",
+    "swiftmodule" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/API~partial.swiftmodule"
+  },
+  "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/KuXuan/App.swift" : {
+    "const-values" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/App.swiftconstvalues",
+    "dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/App.d",
+    "diagnostics" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/App.dia",
+    "index-unit-output-path" : "/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/App.o",
+    "llvm-bc" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/App.bc",
+    "object" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/App.o",
+    "swift-dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/App.swiftdeps",
+    "swiftmodule" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/App~partial.swiftmodule"
+  },
+  "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/KuXuan/AuthStore.swift" : {
+    "const-values" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/AuthStore.swiftconstvalues",
+    "dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/AuthStore.d",
+    "diagnostics" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/AuthStore.dia",
+    "index-unit-output-path" : "/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/AuthStore.o",
+    "llvm-bc" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/AuthStore.bc",
+    "object" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/AuthStore.o",
+    "swift-dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/AuthStore.swiftdeps",
+    "swiftmodule" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/AuthStore~partial.swiftmodule"
+  },
+  "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/KuXuan/CommentView.swift" : {
+    "const-values" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/CommentView.swiftconstvalues",
+    "dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/CommentView.d",
+    "diagnostics" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/CommentView.dia",
+    "index-unit-output-path" : "/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/CommentView.o",
+    "llvm-bc" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/CommentView.bc",
+    "object" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/CommentView.o",
+    "swift-dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/CommentView.swiftdeps",
+    "swiftmodule" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/CommentView~partial.swiftmodule"
+  },
+  "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/KuXuan/FullPlayer.swift" : {
+    "const-values" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/FullPlayer.swiftconstvalues",
+    "dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/FullPlayer.d",
+    "diagnostics" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/FullPlayer.dia",
+    "index-unit-output-path" : "/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/FullPlayer.o",
+    "llvm-bc" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/FullPlayer.bc",
+    "object" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/FullPlayer.o",
+    "swift-dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/FullPlayer.swiftdeps",
+    "swiftmodule" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/FullPlayer~partial.swiftmodule"
+  },
+  "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/KuXuan/HomeView.swift" : {
+    "const-values" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/HomeView.swiftconstvalues",
+    "dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/HomeView.d",
+    "diagnostics" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/HomeView.dia",
+    "index-unit-output-path" : "/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/HomeView.o",
+    "llvm-bc" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/HomeView.bc",
+    "object" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/HomeView.o",
+    "swift-dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/HomeView.swiftdeps",
+    "swiftmodule" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/HomeView~partial.swiftmodule"
+  },
+  "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/KuXuan/ImageColor.swift" : {
+    "const-values" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/ImageColor.swiftconstvalues",
+    "dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/ImageColor.d",
+    "diagnostics" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/ImageColor.dia",
+    "index-unit-output-path" : "/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/ImageColor.o",
+    "llvm-bc" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/ImageColor.bc",
+    "object" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/ImageColor.o",
+    "swift-dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/ImageColor.swiftdeps",
+    "swiftmodule" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/ImageColor~partial.swiftmodule"
+  },
+  "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/KuXuan/MiniPlayer.swift" : {
+    "const-values" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/MiniPlayer.swiftconstvalues",
+    "dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/MiniPlayer.d",
+    "diagnostics" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/MiniPlayer.dia",
+    "index-unit-output-path" : "/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/MiniPlayer.o",
+    "llvm-bc" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/MiniPlayer.bc",
+    "object" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/MiniPlayer.o",
+    "swift-dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/MiniPlayer.swiftdeps",
+    "swiftmodule" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/MiniPlayer~partial.swiftmodule"
+  },
+  "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/KuXuan/Models.swift" : {
+    "const-values" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/Models.swiftconstvalues",
+    "dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/Models.d",
+    "diagnostics" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/Models.dia",
+    "index-unit-output-path" : "/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/Models.o",
+    "llvm-bc" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/Models.bc",
+    "object" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/Models.o",
+    "swift-dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/Models.swiftdeps",
+    "swiftmodule" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/Models~partial.swiftmodule"
+  },
+  "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/KuXuan/PlayerEngine.swift" : {
+    "const-values" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/PlayerEngine.swiftconstvalues",
+    "dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/PlayerEngine.d",
+    "diagnostics" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/PlayerEngine.dia",
+    "index-unit-output-path" : "/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/PlayerEngine.o",
+    "llvm-bc" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/PlayerEngine.bc",
+    "object" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/PlayerEngine.o",
+    "swift-dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/PlayerEngine.swiftdeps",
+    "swiftmodule" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/PlayerEngine~partial.swiftmodule"
+  },
+  "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/KuXuan/PlaylistView.swift" : {
+    "const-values" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/PlaylistView.swiftconstvalues",
+    "dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/PlaylistView.d",
+    "diagnostics" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/PlaylistView.dia",
+    "index-unit-output-path" : "/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/PlaylistView.o",
+    "llvm-bc" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/PlaylistView.bc",
+    "object" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/PlaylistView.o",
+    "swift-dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/PlaylistView.swiftdeps",
+    "swiftmodule" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/PlaylistView~partial.swiftmodule"
+  },
+  "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/KuXuan/QueueSheet.swift" : {
+    "const-values" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/QueueSheet.swiftconstvalues",
+    "dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/QueueSheet.d",
+    "diagnostics" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/QueueSheet.dia",
+    "index-unit-output-path" : "/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/QueueSheet.o",
+    "llvm-bc" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/QueueSheet.bc",
+    "object" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/QueueSheet.o",
+    "swift-dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/QueueSheet.swiftdeps",
+    "swiftmodule" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/QueueSheet~partial.swiftmodule"
+  },
+  "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/KuXuan/SettingsView.swift" : {
+    "const-values" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/SettingsView.swiftconstvalues",
+    "dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/SettingsView.d",
+    "diagnostics" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/SettingsView.dia",
+    "index-unit-output-path" : "/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/SettingsView.o",
+    "llvm-bc" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/SettingsView.bc",
+    "object" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/SettingsView.o",
+    "swift-dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/SettingsView.swiftdeps",
+    "swiftmodule" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/SettingsView~partial.swiftmodule"
+  },
+  "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/KuXuan/Theme.swift" : {
+    "const-values" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/Theme.swiftconstvalues",
+    "dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/Theme.d",
+    "diagnostics" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/Theme.dia",
+    "index-unit-output-path" : "/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/Theme.o",
+    "llvm-bc" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/Theme.bc",
+    "object" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/Theme.o",
+    "swift-dependencies" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/Theme.swiftdeps",
+    "swiftmodule" : "/Users/mark/WorkBuddy/2026-10-26-12-47-31/kuxuan-ios/native/build/KuXuan.build/Release-iphoneos/KuXuan.build/Objects-normal/arm64/Theme~partial.swiftmodule"
+  }
+}
