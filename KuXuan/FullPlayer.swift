@@ -19,6 +19,16 @@ enum LyricsStyle: String, CaseIterable, Identifiable {
         case .bounce:     return "跳动歌词"
         }
     }
+    /// 设置页 Picker 下方展示的简短说明，帮助用户理解每种风格的差异。
+    var description: String {
+        switch self {
+        case .miSide:     return "当前句打字机浮现后整句立体掉落、触底反弹，停留后淡出，沉浸感强。"
+        case .bilingual:  return "左对齐逐字染色，当前句放大高亮并附翻译，适合双语歌曲。"
+        case .vinylDisc:  return "旋转黑胶唱片 + 侧边歌词，当前句高亮、前后句随距离淡出。"
+        case .aiDirector: return "深蓝黑底发光歌词，扫光描绘当前句，氛围感最强。"
+        case .bounce:     return "当前句居中大字，逐字弹性弹入，经典卡拉OK效果。"
+        }
+    }
     static var current: LyricsStyle {
         get { LyricsStyle(rawValue: UserDefaults.standard.string(forKey: "kuxuan_lyrics_style") ?? "") ?? .miSide }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "kuxuan_lyrics_style") }
@@ -968,15 +978,15 @@ struct FullScreenLyricsView: View {
         return VStack(alignment: .leading, spacing: 6) {
             if line.words.isEmpty {
                 Text(line.text.isEmpty ? "·" : line.text)
-                    .font(isActive ? .system(size: 23, weight: .bold)
-                                   : .system(size: 17, weight: .medium))
+                    .font(isActive ? KXFont.scaled(23, weight: .bold)
+                                   : KXFont.scaled(17, weight: .medium))
                     .foregroundColor(isActive ? .white
                                      : (isPast ? accentColor.opacity(0.62) : .white.opacity(0.32)))
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 wordLine(line, isActive: isActive, isPast: isPast)
-                    .font(isActive ? .system(size: 23, weight: .bold)
-                                   : .system(size: 17, weight: .medium))
+                    .font(isActive ? KXFont.scaled(23, weight: .bold)
+                                   : KXFont.scaled(17, weight: .medium))
                     .fixedSize(horizontal: false, vertical: true)
             }
             if isActive, !line.translation.isEmpty {
@@ -989,6 +999,12 @@ struct FullScreenLyricsView: View {
         .scaleEffect(isActive ? 1.04 : 1.0)
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(.easeInOut(duration: 0.25), value: isActive)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
+        .accessibilityLabel(isActive
+                           ? "当前歌词：" + (line.text.isEmpty ? "·" : line.text)
+                           : (line.text.isEmpty ? "·" : line.text))
+        .accessibilityHint("双击跳转到这一句")
     }
 
     /// 强调色：取封面主色并提亮增饱和，用于「逐字染色」
@@ -1194,6 +1210,12 @@ struct VinylDiscLyricsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
         .animation(.easeInOut(duration: 0.3), value: isActive)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
+        .accessibilityLabel(isActive
+                           ? "当前歌词：" + (line.text.isEmpty ? "·" : line.text)
+                           : (line.text.isEmpty ? "·" : line.text))
+        .accessibilityHint("双击跳转到这一句")
     }
 
     private func accent(_ o: Double = 1) -> Color {
@@ -1410,6 +1432,12 @@ struct AIDirectorLyricsView: View {
         .frame(maxWidth: .infinity, alignment: .center)
         .shadow(color: accent.opacity(isActive ? 0.9 : 0), radius: isActive ? 16 : 0)
         .animation(.easeInOut(duration: 0.35), value: isActive)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
+        .accessibilityLabel(isActive
+                           ? "当前歌词：" + (line.text.isEmpty ? "·" : line.text)
+                           : (line.text.isEmpty ? "·" : line.text))
+        .accessibilityHint("双击跳转到这一句")
     }
 
     private var topBar: some View {
@@ -1593,6 +1621,7 @@ struct MiSideLyricsView: View {
     /// （此前下坠样式因此被 0.05s 高频重建拖垮渲染服务，整机重启）
     @State private var tickTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
     @State private var chromeVisible = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var lines: [LyricLine] { player.lyrics }
     private var groundRatio: CGFloat { 0.82 }
@@ -1669,6 +1698,8 @@ struct MiSideLyricsView: View {
                     }
                     .modifier(KXLyricWidth(total: geo.size.width, side: 28))
                     .position(x: geo.size.width / 2, y: spawnY)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("当前歌词：" + (lines[activeIndex].text.isEmpty ? "·" : lines[activeIndex].text))
                 }
             }
         }
@@ -1734,6 +1765,13 @@ struct MiSideLyricsView: View {
         if i == fallingIndex { return }
         fallingIndex = i
         fallingText = typewriterText(lines[i])   // 该句此时已整句显示完毕（tick 已越过其末尾），快照安全
+        // 减少动态效果：直接落到地面静止，不播放坠落/翻滚/回弹动画（HIG 无障碍）
+        if reduceMotion {
+            fallProgress = 1
+            fallRot = 0
+            fallOpacity = 1
+            return
+        }
         fallProgress = 0
         fallRot = 0
         fallOpacity = 1
@@ -1853,8 +1891,13 @@ struct BounceLyricsView: View {
             }
             if activeIndex >= 0, activeIndex < lines.count {
                 currentLine(lines[activeIndex], fontSize: mainSize)
+                    // .id 让切句时当前句重建并触发 BounceLine.entered 入场弹入，
+                    // 同时与上一句在视图树上身份隔离，避免前后行一并闪烁。
+                    .id(activeIndex)
                     // 竖版空间窄：给主歌词上下留白，避免与前后句挤在一起
                     .padding(.vertical, isPortrait ? 10 : 16)
+                    // 补齐与其他模式一致的「点歌词跳转」；VoiceOver 下 BounceLine 已声明为按钮
+                    .onTapGesture { player.seek(to: lines[activeIndex].time) }
             }
             if activeIndex + 1 < lines.count {
                 lineText(lines[activeIndex + 1], size: isPortrait ? 19 : 22)
@@ -1865,11 +1908,11 @@ struct BounceLyricsView: View {
         // 顺序不能反：先 padding 再撑满 frame。旧写法先 frame(.infinity) 再 padding(30)，
         // 内层 BounceFlow 会按「全屏宽」换行，外层又向内缩 30pt，整块被居中后左侧溢出 30pt，
         // 正好切掉每行第一个字符（"come over…" 显示成 "ome over…"）。
+        // 注意：.id(activeIndex)/transition 此前挂在整段 VStack 上，每次切句会让前/后行与当前句
+        // 一起淡入淡出（整体闪烁）。现已移走，只给当前句 currentLine 加 .id（见下），切句时
+        // 仅当前句借 BounceLine.entered 的弹簧动画弹入，前/后行稳定不闪。
         .padding(.horizontal, 30)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .id(activeIndex)
-        .transition(.opacity)
-        .animation(.easeInOut(duration: 0.3), value: activeIndex)
     }
 
     private func currentLine(_ line: LyricLine, fontSize: CGFloat = 30) -> some View {
@@ -1932,6 +1975,7 @@ struct BounceLyricsView: View {
         let tick: Double
         var fontSize: CGFloat = 30
         @State private var entered = false
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
         var body: some View {
             VStack(spacing: 10) {
                 if words.isEmpty {
@@ -1969,7 +2013,12 @@ struct BounceLyricsView: View {
             .offset(y: entered ? 0 : 24)
             .opacity(entered ? 1 : 0)
             .blur(radius: entered ? 0 : 6)
-            .animation(.interpolatingSpring(stiffness: 300, damping: 20), value: entered)
+            // 减少动态效果：关闭弹簧入场（系统也会降级，此处显式关闭更稳妥）
+            .animation(reduceMotion ? nil : .interpolatingSpring(stiffness: 300, damping: 20), value: entered)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits([.isButton, .isSelected])
+            .accessibilityLabel("当前歌词：" + (line.text.isEmpty ? "·" : line.text))
+            .accessibilityHint("双击跳转到这一句")
             .onAppear { entered = true }
         }
     }
@@ -1981,6 +2030,7 @@ struct BounceLyricsView: View {
         let text: String
         let appeared: Bool
         @State private var shown = false
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
         var body: some View {
             Text(text)
                 .scaleEffect(shown ? 1 : 0.96)
@@ -1988,8 +2038,9 @@ struct BounceLyricsView: View {
                 // 未唱到的字保持可读：全暗 + 模糊会让英文歌只剩静态的中文翻译清晰可见
                 .opacity(shown ? 1 : 0.62)
                 .animation(.interpolatingSpring(stiffness: 380, damping: 15), value: shown)
-                .onChange(of: appeared) { if $0 { shown = true } }
-                .onAppear { if appeared { shown = true } }
+                // 减少动态效果：直接显示终态，不弹入
+                .onChange(of: appeared) { if $0 || reduceMotion { shown = true } }
+                .onAppear { if appeared || reduceMotion { shown = true } }
         }
     }
 
