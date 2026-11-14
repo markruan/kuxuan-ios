@@ -440,8 +440,8 @@ struct FullPlayer: View {
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: player.showQueue)
         .sheet(isPresented: $showComments) {
-            // 评论页要读网易云绑定态并发送评论，sheet 不会自动继承 EnvironmentObject
-            // 评论接口只认网易云数字歌曲 id（实测 online:347230 / stream 路径均 400 bad song id），
+            // 评论页要读云村绑定态并发送评论，sheet 不会自动继承 EnvironmentObject
+            // 评论接口只认云村数字歌曲 id（实测 online:347230 / stream 路径均 400 bad song id），
             // file 是流与歌词的文件名，不能拿来当 songID。
             CommentSheet(songID: song?.ncmID ?? "", songTitle: song?.title ?? "")
                 .environmentObject(auth)
@@ -2159,7 +2159,7 @@ struct BounceLyricsView: View {
     }
 }
 
-// MARK: - 歌曲信息 / 音质 / 加入网易云歌单
+// MARK: - 歌曲信息 / 音质 / 加入云村歌单
 struct SongInfoSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var auth: AuthStore
@@ -2175,7 +2175,7 @@ struct SongInfoSheet: View {
     @State private var newPlaylistName = ""
     @State private var creatingPlaylist = false
 
-    /// 网易云 /user/playlist 同时返回「我创建的」和「我收藏的」歌单。
+    /// 云村 /user/playlist 同时返回「我创建的」和「我收藏的」歌单。
     /// 上游 /playlist/tracks 只能操作自己创建的歌单，收藏的他人歌单会直接失败，
     /// 因此「加入歌单」只列自建歌单（subscribed == false），与个人中心「我的歌单」口径一致。
     private var ownPlaylists: [NCMPlaylist] {
@@ -2191,7 +2191,7 @@ struct SongInfoSheet: View {
                     artistRow
                     infoRow("专辑", (song?.album ?? "").isEmpty ? "—" : (song?.album ?? "—"))
                     infoRow("时长", song.map { fmtDuration($0.duration) } ?? "—")
-                    infoRow("网易云 ID", song?.ncmID ?? "—")
+                    infoRow("云村 ID", song?.ncmID ?? "—")
                 } header: {
                     Text("歌曲")
                 }
@@ -2222,7 +2222,7 @@ struct SongInfoSheet: View {
                         } label: {
                             HStack(spacing: 10) {
                                 KXIcon(icon: .plusCircle, size: 17, color: .kxAccent)
-                                Text("新建网易云歌单")
+                                Text("新建云村歌单")
                                     .font(.subheadline).foregroundColor(.primary)
                                 Spacer()
                                 if creatingPlaylist { ProgressView().scaleEffect(0.7) }
@@ -2230,7 +2230,7 @@ struct SongInfoSheet: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(creatingPlaylist)
-                        .alert("新建网易云歌单", isPresented: $showCreatePlaylist) {
+                        .alert("新建云村歌单", isPresented: $showCreatePlaylist) {
                             TextField("歌单名称", text: $newPlaylistName)
                             Button("取消", role: .cancel) { newPlaylistName = "" }
                             Button("仅创建") {
@@ -2240,15 +2240,15 @@ struct SongInfoSheet: View {
                                 Task { await createPlaylist(addCurrentSong: true) }
                             }
                         } message: {
-                            Text("将在已连接的网易云账号中创建歌单。")
+                            Text("将在已连接的云村账号中创建歌单。")
                         }
                     }
                     if !auth.ncmBound {
-                        Text("绑定网易云账号后，可把这首歌加入云端歌单。")
+                        Text("绑定云村账号后，可把这首歌加入云端歌单。")
                             .font(.caption).foregroundColor(.secondary)
                     } else if ownPlaylists.isEmpty {
                         Text(auth.ncmPlaylists.isEmpty
-                             ? "还没有云端歌单，点上方「新建网易云歌单」创建第一个。"
+                             ? "还没有云端歌单，点上方「新建云村歌单」创建第一个。"
                              : "你还没有自建歌单。收藏的歌单不能加歌，点上方新建歌单后再加入。")
                             .font(.caption).foregroundColor(.secondary)
                     } else {
@@ -2342,7 +2342,7 @@ struct SongInfoSheet: View {
     }
 
     private func load() async {
-        // 只在缓存为空时拉取，避免每次打开都消耗共享网易云会话的限流额度
+        // 只在缓存为空时拉取，避免每次打开都消耗共享云村会话的限流额度
         if auth.ncmBound, auth.ncmPlaylists.isEmpty { await auth.loadNCMPlaylists() }
         guard let id = song?.ncmID, !id.isEmpty else { quality = "本地曲目"; return }
         do {
@@ -2359,11 +2359,11 @@ struct SongInfoSheet: View {
     @MainActor
     private func addToPlaylist(_ pl: NCMPlaylist) async {
         guard !pl.subscribed else {
-            addNotice = "「\(pl.name)」是收藏的歌单，网易云不支持往里面加歌，请先新建一个自己的歌单"
+            addNotice = "「\(pl.name)」是收藏的歌单，云村不支持往里面加歌，请先新建一个自己的歌单"
             return
         }
         guard let id = song?.ncmID, !id.isEmpty else {
-            addNotice = "这首歌没有网易云 ID，无法加入云端歌单"
+            addNotice = "这首歌没有云村 ID，无法加入云端歌单"
             return
         }
         addingPID = pl.id
@@ -2384,7 +2384,7 @@ struct SongInfoSheet: View {
         newPlaylistName = ""
         guard !name.isEmpty, !creatingPlaylist else { return }
         guard auth.ncmBound else {
-            addNotice = "请先扫码绑定网易云账号"
+            addNotice = "请先扫码绑定云村账号"
             return
         }
         creatingPlaylist = true
@@ -2401,7 +2401,7 @@ struct SongInfoSheet: View {
                         addNotice = "歌单「\(name)」已创建，但加入歌曲失败：\(error.localizedDescription)"
                     }
                 } else {
-                    addNotice = "歌单「\(name)」已创建，但这首歌没有网易云 ID，无法自动加入"
+                    addNotice = "歌单「\(name)」已创建，但这首歌没有云村 ID，无法自动加入"
                 }
             } else {
                 successToast = "歌单「\(name)」已创建"
