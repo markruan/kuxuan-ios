@@ -75,14 +75,21 @@ extension View {
     }
 }
 
+/// 只有异常 / 需要用户决策的文案才允许用 toast / alert 打断操作。
+/// 「已收藏」「已创建」「评论已发布」这类成功反馈，界面状态本身已经表达，
+/// 再弹一条属于对用户无用的提醒。
+func KXNeedsAttention(_ s: String) -> Bool {
+    let keys = ["失败", "还原", "未连接", "未绑定", "无法", "请先", "不支持", "不能"]
+    return keys.contains { s.contains($0) }
+}
+
 // MARK: - 收藏云同步短提示
-/// 挂在播放页 / 歌单页上，显示「已同步到网易云并核对」「未绑定，仅本机」「同步失败已还原」。
-/// 文案由 PlayerEngine 统一产生并在约 2.8s 后自动清空，这里只负责展示。
 struct FavSyncToast: View {
     @EnvironmentObject var player: PlayerEngine
-    /// 收藏歌手的提示优先（其语义与歌曲收藏一致，只是对象不同），其次才是歌曲收藏。
     private var message: String? {
-        player.favArtistNotice ?? player.favNotice
+        let m = player.favArtistNotice ?? player.favNotice
+        guard let m, KXNeedsAttention(m) else { return nil }
+        return m
     }
     var body: some View {
         Group {
@@ -644,5 +651,91 @@ struct KXSkeletonList: View {
         .redacted(reason: .placeholder)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("正在加载")
+    }
+}
+
+/// 首页专用骨架：按真实首屏顺序与尺寸占位（热搜胶囊 → 2.7:1 banner → 每日推荐
+/// → 推荐歌单画廊 → 榜单行 → 新歌行）。通用 KXSkeletonList 是「歌手头部 + 歌曲列表」
+/// 的形状，用在首页会和数据回来后的轮播/卡片网格差出一整屏，加载完成瞬间剧烈跳动。
+struct KXHomeSkeleton: View {
+    private let fill = Color(.secondarySystemFill)
+
+    private func bar(_ w: CGFloat, _ h: CGFloat, _ r: CGFloat = 4) -> some View {
+        RoundedRectangle(cornerRadius: r, style: .continuous).fill(fill)
+            .frame(width: w, height: h)
+    }
+    private func sectionHead(_ w: CGFloat) -> some View {
+        bar(w, 18, 5).padding(.horizontal, 16)
+    }
+    private func cardRow(cover: CGFloat, count: Int, gap: CGFloat) -> some View {
+        // 真实首页的每日推荐 / 推荐歌单都是横向 ScrollView。骨架若用裸 HStack，
+        // 4 张 110pt 卡片总宽 476pt 会把外层 VStack 撑到比屏幕还宽，
+        // 于是整块骨架被居中摆放：左边被裁、右边越界，看上去和真实布局差很远。
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: gap) {
+                ForEach(0..<count, id: \.self) { _ in
+                    VStack(alignment: .leading, spacing: 6) {
+                        bar(cover, cover, 12)
+                        bar(cover * 0.78, 12)
+                        bar(cover * 0.52, 10)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .frame(height: cover + 34)   // 封面 + 间距6 + 标题12 + 间距6 + 描述10
+    }
+    private func listRow(cover: CGFloat) -> some View {
+        HStack(spacing: 12) {
+            bar(cover, cover, 9)
+            VStack(alignment: .leading, spacing: 6) {
+                bar(150, 13)
+                bar(100, 10)
+            }
+            Spacer()
+        }
+        .padding(10)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.horizontal, 16)
+    }
+
+    var body: some View {
+        let cardW = UIScreen.main.bounds.width - 38
+        VStack(alignment: .leading, spacing: 18) {
+            bar(72, 12).padding(.horizontal, 16)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array([64, 86, 72, 96, 68].enumerated()), id: \.offset) { _, w in
+                        Capsule().fill(fill).frame(width: CGFloat(w), height: 28)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            .frame(height: 28)
+
+            bar(cardW, round(cardW / 2.7), 18).padding(.horizontal, 16)
+            HStack(spacing: 6) {
+                ForEach(0..<4, id: \.self) { i in
+                    Capsule().fill(fill).frame(width: i == 0 ? 16 : 6, height: 6)
+                }
+            }
+            .frame(maxWidth: .infinity)
+
+            sectionHead(88)                                  // 每日推荐
+            cardRow(cover: 110, count: 4, gap: 12)
+            sectionHead(88)                                  // 推荐歌单
+            cardRow(cover: 130, count: 3, gap: 6)
+            sectionHead(64)                                  // 排行榜
+            ForEach(0..<3, id: \.self) { _ in listRow(cover: 56) }
+            sectionHead(80)                                  // 新歌速递
+            ForEach(0..<3, id: \.self) { _ in listRow(cover: 46) }
+        }
+        // 钉死为视口宽度并左对齐，任何子行都不得再把骨架整体撑宽/居中
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .redacted(reason: .placeholder)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("正在加载首页")
     }
 }
