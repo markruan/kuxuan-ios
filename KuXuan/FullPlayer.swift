@@ -80,6 +80,13 @@ fileprivate struct LyricsChromeAutoHide: ViewModifier {
 
     private func scheduleHide() {
         hideTask?.cancel()
+        // VoiceOver 靠焦点遍历找控件：自动隐藏会让全屏歌词唯一的退出按钮从焦点环消失，
+        // 且 .allowsHitTesting(false) 会同时屏蔽辅助功能焦点。辅助技术开启时常驻显示。
+        guard !UIAccessibility.isVoiceOverRunning,
+              !UIAccessibility.isReduceMotionEnabled else {
+            withAnimation(.easeInOut(duration: 0.25)) { visible = true }
+            return
+        }
         let task = DispatchWorkItem {
             withAnimation(.easeInOut(duration: 0.3)) { visible = false }
         }
@@ -140,7 +147,7 @@ fileprivate struct WavePalette {
     let wave: Color, bgMid: Color, bgEdge: Color, bgDeep: Color
 }
 fileprivate func wavePalette(_ r: Double, _ g: Double, _ b: Double) -> WavePalette {
-    let (h, s, l) = rgbToHsl(r, g, b)
+    let (h, s, _) = rgbToHsl(r, g, b)
     let w = hslToRgb(h, min(0.9, max(0.45, s * 1.15 + 0.06)), 0.58)
     return WavePalette(
         wave: Color(.sRGB, red: w.0, green: w.1, blue: w.2, opacity: 1),
@@ -409,6 +416,8 @@ struct FullPlayer: View {
             }
             .environmentObject(player)
             .environmentObject(auth)
+            // 全屏歌词是 fullScreenCover：给 VoiceOver 一条不依赖顶部按钮的退出动作
+            .accessibilityAction(named: "关闭全屏歌词") { showFullLyrics = false }
         }
         .onChange(of: player.currentTime) { _ in syncLyric() }
         .onChange(of: player.lyrics) { _ in
@@ -438,19 +447,15 @@ struct FullPlayer: View {
     private var topBar: some View {
         ZStack {
             HStack {
-                Button { player.showFullPlayer = false } label: {
-                    KXIcon(icon: .chevronDown, size: 23, color: .white)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
+                KXIconButton(icon: .chevronDown, label: "收起播放页",
+                             hint: "返回首页", size: 23) {
+                    player.showFullPlayer = false
                 }
                 Spacer()
-                Button {
+                KXIconButton(icon: showLyrics ? .note : .lyric,
+                             label: showLyrics ? "显示封面" : "显示歌词",
+                             size: 20, color: .white.opacity(0.9)) {
                     withAnimation(.easeInOut(duration: 0.25)) { showLyrics.toggle() }
-                } label: {
-                    KXIcon(icon: showLyrics ? .note : .lyric,
-                           size: 20, color: .white.opacity(0.9))
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
                 }
             }
             VStack(spacing: 3) {
@@ -465,6 +470,8 @@ struct FullPlayer: View {
                         Text(a).font(.caption2).opacity(0.6).lineLimit(1)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("查看歌手 \(a)")
+                    .accessibilityHint("打开歌手主页")
                 }
             }
             .frame(maxWidth: .infinity)
@@ -607,6 +614,8 @@ struct FullPlayer: View {
                     .overlay(Circle().stroke(Color.white.opacity(0.3), lineWidth: 1))
             }
             .contentShape(Circle())
+            .accessibilityLabel("进入全屏歌词")
+            .accessibilityHint("打开沉浸式歌词页")
             .opacity(lyricsFullBtnVisible ? 1 : 0)
             .animation(.easeInOut(duration: 0.3), value: lyricsFullBtnVisible)
             .onAppear {
@@ -658,6 +667,18 @@ struct FullPlayer: View {
                 }
                 .frame(width: w, height: h)
                 .contentShape(Rectangle())
+                // 手绘进度条对 VoiceOver 只是无语义图形：补 adjustable trait，
+                // 让上下轻扫以 15 秒为步长调节，并朗读当前/总时长。
+                .accessibilityElement()
+                .accessibilityLabel("播放进度")
+                .accessibilityValue("\(fmt(min(sliderValue, total))) / \(fmt(player.duration))")
+                                .accessibilityAdjustableAction { direction in
+                    switch direction {
+                    case .increment: player.seek(to: min(total, sliderValue + 15))
+                    case .decrement: player.seek(to: max(0, sliderValue - 15))
+                    @unknown default: break
+                    }
+                }
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { v in
@@ -698,33 +719,38 @@ struct FullPlayer: View {
     // MARK: 控制行
     private var controlRow: some View {
         HStack(spacing: 48) {
-            skipButton("backward.fill") { player.prev() }
+            skipButton("backward.fill", label: "上一首") { player.prev() }
             Button {
                 if player.isPlaying { player.pause() } else { player.play() }
             } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 26, weight: .black))
+                    .font(KXFont.scaled(26, weight: .black))
                     .foregroundColor(.black)
                     .frame(width: 66, height: 66)
                     .background(Circle().fill(Color.white))
                     .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+                    .accessibilityHidden(true)
             }
-            skipButton("forward.fill") { player.next() }
+            .accessibilityLabel(player.isPlaying ? "暂停" : "播放")
+            .accessibilityHint("双击切换播放状态")
+            skipButton("forward.fill", label: "下一首") { player.next() }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
     }
 
     /// 上一曲/下一曲：改用 SF Symbols（Apple 原生），与中央播放键清晰区分，不再与播放按钮混淆
-    private func skipButton(_ sfSymbol: String,
+    private func skipButton(_ sfSymbol: String, label: String,
                             action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: sfSymbol)
-                .font(.system(size: 30, weight: .black))
+                .font(KXFont.scaled(30, weight: .black))
                 .foregroundColor(.white)
                 .frame(width: 48, height: 48)
-                .contentShape(Circle())
+                .contentShape(Rectangle())
+                .accessibilityHidden(true)
         }
+        .accessibilityLabel(label)
     }
 
     // MARK: 功能行（5 等分，全部钉在宽度内）
@@ -734,7 +760,7 @@ struct FullPlayer: View {
         let fav = song.map { player.isFav($0.id) } ?? false
         return HStack(spacing: 0) {
             fnButton(modeIcon, player.modeName) { player.cycleMode() }
-            fnButton(fav ? .heartFill : .heart, "收藏") {
+            fnButton(fav ? .heartFill : .heart, "收藏", value: fav ? "已收藏" : "未收藏") {
                 if let s = song { player.toggleFav(s) }
             }
             fnButton(.comment, "评论") { showComments = true }
@@ -746,15 +772,19 @@ struct FullPlayer: View {
     }
 
     private func fnButton(_ icon: KXIconName, _ title: String,
+                          value: String? = nil,
                           action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 4) {
                 KXIcon(icon: icon, size: 19, color: .white)
-                Text(title).font(.system(size: 10)).lineLimit(1).foregroundColor(.white)
+                    .accessibilityHidden(true)
+                Text(title).font(KXFont.scaled(10)).lineLimit(1).foregroundColor(.white)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .contentShape(Rectangle())
         }
+        .accessibilityLabel(title)
+        .accessibilityValue(value ?? "")
     }
 
     // MARK: 歌词同步（二分查找，随 currentTime 每 0.5s 更新）
@@ -841,10 +871,8 @@ struct FullScreenLyricsView: View {
 
     private var topBar: some View {
         HStack(spacing: 0) {
-            Button { dismissLyricsToPortrait { dismiss() } } label: {
-                KXIcon(icon: .chevronDown, size: 22, color: .white)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+            KXModalCloseButton(label: "返回播放页", hint: "关闭全屏歌词，返回播放器") {
+                dismissLyricsToPortrait { dismiss() }
             }
             Spacer()
         }
@@ -916,7 +944,7 @@ struct FullScreenLyricsView: View {
             }
             if isActive, !line.translation.isEmpty {
                 Text(line.translation)
-                    .font(.system(size: 14, weight: .regular))
+                    .font(KXFont.scaled(14, weight: .regular))
                     .foregroundColor(.white.opacity(0.55))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1108,13 +1136,15 @@ struct VinylDiscLyricsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 if line.words.isEmpty {
                     Text(line.text.isEmpty ? "·" : line.text)
-                        .font(.system(size: isActive ? 22 : 17, weight: isActive ? .bold : .medium))
+                        .font(isActive ? KXFont.scaled(22, weight: .bold)
+                                      : KXFont.scaled(17, weight: .medium))
                 } else {
                     wordLine(line, active: isActive)
-                        .font(.system(size: isActive ? 22 : 17, weight: isActive ? .bold : .medium))
+                        .font(isActive ? KXFont.scaled(22, weight: .bold)
+                                      : KXFont.scaled(17, weight: .medium))
                 }
                 if isActive, !line.translation.isEmpty {
-                    Text(line.translation).font(.system(size: 13)).foregroundColor(.white.opacity(0.55))
+                    Text(line.translation).font(KXFont.scaled(13)).foregroundColor(.white.opacity(0.55))
                 }
             }
         }
@@ -1174,6 +1204,7 @@ private struct VinylRotatingDisc: View {
     private let rotationSeconds: Double = 4.8          // 一圈约 4.8 秒
     private var degPerSec: Double { 360 / rotationSeconds }
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var accumulated: Double = 0
     @State private var last: Date = Date()
     @State private var ticker = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
@@ -1185,7 +1216,7 @@ private struct VinylRotatingDisc: View {
             .onReceive(ticker) { now in
                 let dt = now.timeIntervalSince(last)
                 last = now
-                guard player.isPlaying else { return }
+                guard player.isPlaying, !reduceMotion else { return }
                 accumulated += degPerSec * dt
                 if accumulated >= 360 { accumulated -= 360 }
             }
@@ -1231,8 +1262,8 @@ private struct DiscArt: View {
 
     private var topBar: some View {
         HStack(spacing: 0) {
-            Button { dismissLyricsToPortrait { dismiss() } } label: {
-                KXIcon(icon: .chevronDown, size: 22, color: .white).frame(width: 44, height: 44).contentShape(Rectangle())
+            KXModalCloseButton(label: "返回播放页", hint: "关闭全屏歌词，返回播放器") {
+                dismissLyricsToPortrait { dismiss() }
             }
             Spacer()
         }
@@ -1336,7 +1367,7 @@ struct AIDirectorLyricsView: View {
             AILightLine(line: line, active: isActive, tick: tick)
             if isActive, !line.translation.isEmpty {
                 Text(line.translation)
-                    .font(.system(size: 15))
+                    .font(KXFont.scaled(15))
                     .foregroundColor(accent.opacity(0.85))
             }
         }
@@ -1349,8 +1380,8 @@ struct AIDirectorLyricsView: View {
 
     private var topBar: some View {
         HStack(spacing: 0) {
-            Button { dismissLyricsToPortrait { dismiss() } } label: {
-                KXIcon(icon: .chevronDown, size: 22, color: .white).frame(width: 44, height: 44).contentShape(Rectangle())
+            KXModalCloseButton(label: "返回播放页", hint: "关闭全屏歌词，返回播放器") {
+                dismissLyricsToPortrait { dismiss() }
             }
             Spacer()
         }
@@ -1446,6 +1477,7 @@ fileprivate struct AILightLine: View {
     let line: LyricLine
     let active: Bool
     let tick: Double
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var sweep: CGFloat = -0.6
     private let accent = Color(hue: 0.55, saturation: 0.9, brightness: 1)
 
@@ -1467,7 +1499,7 @@ fileprivate struct AILightLine: View {
             : line.words.reduce(Text("")) { acc, w in acc + Text(w.text).foregroundColor(wColor(w)) }
     }
     var body: some View {
-        let font = Font.system(size: active ? 30 : 20, weight: .bold)
+        let font = KXFont.scaled(active ? 30 : 20, weight: .bold)
         return ZStack {
             base.font(font)
                 .foregroundColor(.white)
@@ -1483,6 +1515,8 @@ fileprivate struct AILightLine: View {
                     )
                     .mask(base.font(font))
                     .onAppear {
+                        // 「减少动态效果」开启时不做无限扫光
+                        guard !reduceMotion else { return }
                         withAnimation(.linear(duration: 2.4).repeatForever(autoreverses: false)) { sweep = 0.6 }
                     }
             }
@@ -1556,10 +1590,10 @@ struct MiSideLyricsView: View {
                     VStack(spacing: 6) {
                         extruded(fallingText ?? typewriterText(lines[fallingIndex]))
                             .opacity(fallOpacity)
-                            .font(.system(size: 26, weight: .bold))
+                            .font(KXFont.scaled(26, weight: .bold))
                         if !lines[fallingIndex].translation.isEmpty {
                             Text(lines[fallingIndex].translation)
-                                .font(.system(size: 14))
+                                .font(KXFont.scaled(14))
                                 .foregroundColor(.white.opacity(0.5 * fallOpacity))
                         }
                     }
@@ -1572,13 +1606,13 @@ struct MiSideLyricsView: View {
                     // 允许自然换行；下坠行（fallingIndex）字号保持 26 不变。
                     VStack(spacing: 6) {
                         extruded(typewriterText(lines[activeIndex]))
-                            .font(.system(size: 32, weight: .bold))
+                            .font(KXFont.scaled(32, weight: .bold))
                             .lineLimit(nil)
                             .minimumScaleFactor(1.0)
                             .fixedSize(horizontal: false, vertical: true)
                         if !lines[activeIndex].translation.isEmpty {
                             Text(lines[activeIndex].translation)
-                                .font(.system(size: 15))
+                                .font(KXFont.scaled(15))
                                 .foregroundColor(.white.opacity(0.55))
                                 .lineLimit(nil)
                                 .minimumScaleFactor(1.0)
@@ -1702,12 +1736,8 @@ struct MiSideLyricsView: View {
             .flatMap { $0.windows }
             .first { $0.isKeyWindow }?.safeAreaInsets.top ?? 59
         return HStack(spacing: 0) {
-            Button {
+            KXModalCloseButton(label: "返回播放页", hint: "关闭全屏歌词，返回播放器") {
                 dismissLyricsToPortrait { dismiss() }
-            } label: {
-                KXIcon(icon: .chevronDown, size: 22, color: .white)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
             }
             Spacer()
         }
@@ -1816,7 +1846,7 @@ struct BounceLyricsView: View {
                 Text(line.words.map { $0.text }.joined())
             }
         }
-        .font(.system(size: size, weight: .semibold))
+        .font(KXFont.scaled(size, weight: .semibold))
         .foregroundColor(.white)
         .lineLimit(nil)
         .minimumScaleFactor(0.9)
@@ -1835,7 +1865,7 @@ struct BounceLyricsView: View {
             VStack(spacing: 10) {
                 if words.isEmpty {
                     Text(line.text.isEmpty ? "·" : line.text)
-                        .font(.system(size: fontSize, weight: .bold))
+                        .font(KXFont.scaled(fontSize, weight: .bold))
                         .foregroundColor(.white)
                         .lineLimit(nil)
                         .minimumScaleFactor(0.85)
@@ -1850,13 +1880,13 @@ struct BounceLyricsView: View {
                             BounceWord(text: words[idx].text, appeared: tick >= words[idx].time)
                         }
                     }
-                    .font(.system(size: fontSize, weight: .bold))
+                    .font(KXFont.scaled(fontSize, weight: .bold))
                     .frame(maxWidth: .infinity, alignment: .center)
                     .fixedSize(horizontal: false, vertical: true)
                 }
                 if !line.translation.isEmpty {
                     Text(line.translation)
-                        .font(.system(size: 15))
+                        .font(KXFont.scaled(15))
                         .foregroundColor(.white.opacity(0.55))
                         .lineLimit(nil)
                         .minimumScaleFactor(1.0)
@@ -1951,12 +1981,8 @@ struct BounceLyricsView: View {
             .flatMap { $0.windows }
             .first { $0.isKeyWindow }?.safeAreaInsets.top ?? 59
         return HStack(spacing: 0) {
-            Button {
+            KXModalCloseButton(label: "返回播放页", hint: "关闭全屏歌词，返回播放器") {
                 dismissLyricsToPortrait { dismiss() }
-            } label: {
-                KXIcon(icon: .chevronDown, size: 22, color: .white)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
             }
             Spacer()
         }
@@ -2220,6 +2246,7 @@ private struct RotatingAlbumCover: View {
     private let rotationSeconds: Double = 20           // 一圈约 20 秒
     private var degPerSec: Double { 360 / rotationSeconds }
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var accumulated: Double = 0
     @State private var last: Date = Date()
     @State private var ticker = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
@@ -2236,7 +2263,7 @@ private struct RotatingAlbumCover: View {
         .onReceive(ticker) { now in
             let dt = now.timeIntervalSince(last)
             last = now
-            guard isPlaying else { return }
+            guard isPlaying, !reduceMotion else { return }
             accumulated += degPerSec * dt
             if accumulated >= 360 { accumulated -= 360 }
         }
