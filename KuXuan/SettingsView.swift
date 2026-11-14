@@ -62,11 +62,11 @@ struct SettingsView: View {
                     .tint(.kxAccent)
             }
 
-            Section("网易云账号") {
+            Section("云村账号") {
                 HStack(spacing: 8) {
                     KXIcon(icon: auth.ncmBound ? .checkCircle : .person,
                            size: 18, color: .kxAccent)
-                    Text(auth.ncmBound ? (auth.ncmProfile?.nickname ?? "网易云") : "未连接网易云")
+                    Text(auth.ncmBound ? (auth.ncmProfile?.nickname ?? "云村") : "未连接云村")
                         .font(.subheadline)
                     Spacer()
                 }
