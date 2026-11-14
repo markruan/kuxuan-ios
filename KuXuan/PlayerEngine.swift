@@ -45,6 +45,8 @@ final class PlayerEngine: ObservableObject {
     @Published var favNotice: String?
     /// 网易云账号里真实存在的红心数量（nil = 尚未成功读取过）
     @Published var cloudFavCount: Int?
+    /// 收藏云端同步是否已结束（成功或失败都算）。首次同步完成前，空收藏列表显示骨架而不是空态文案。
+    @Published var cloudSyncDone = false
     /// 云端红心读取失败原因，仅用于个人中心提示，不影响本地收藏
     @Published var favSyncError: String?
     /// 播放失败提示（版权/网络受限/上游返回非音频），约 2.8s 自动消失
@@ -270,6 +272,8 @@ final class PlayerEngine: ObservableObject {
     /// 策略是只增不减：云端有的补齐，本地独有的（本地曲库、未绑定期间的收藏）保留。
     /// 任何网络/解析失败都不改动本地数据，避免把用户收藏清空。
     func syncFavsFromCloud() async {
+        // 无论成功还是失败都结束骨架态，网络异常时不会把用户永远卡在占位上。
+        defer { Task { @MainActor in self.cloudSyncDone = true } }
         do {
             let resp = try await APIClient.ncmLikeList()
             await MainActor.run {
@@ -371,6 +375,7 @@ final class PlayerEngine: ObservableObject {
 
     /// 从网易云拉取真实关注列表，合并进本地收藏歌手（只增不减，避免覆盖本地缓存）。
     func syncFavArtistsFromCloud() async {
+        defer { Task { @MainActor in self.cloudSyncDone = true } }
         do {
             let list = try await APIClient.artistSublist()
             await MainActor.run {
