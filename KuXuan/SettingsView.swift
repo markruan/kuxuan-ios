@@ -17,8 +17,6 @@ struct SettingsView: View {
                         Text(s.title).tag(s.rawValue)
                     }
                 }
-                Text("可在播放页点「全屏」查看效果；后续会增加更多样式。")
-                    .font(.caption2).foregroundColor(.secondary)
             }
 
             Section {
@@ -67,8 +65,6 @@ struct SettingsView: View {
                         .font(.subheadline)
                     Spacer()
                 }
-                Text("登录后，收藏的歌曲会保存到网易云「我喜欢的音乐」，也可新建与管理歌单。")
-                    .font(.caption2).foregroundColor(.secondary)
             }
         }
         .navigationTitle("设置")
