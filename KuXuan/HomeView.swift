@@ -8,8 +8,33 @@ import CryptoKit
 ///  1) 内存 NSCache（已解码 UIImage，滚回来零延迟、不闪白）
 ///  2) 磁盘 Caches/KXImages（按 URL 的 SHA256 命名，重启后仍在；超过 100MB 清掉最旧 1/3）
 ///  3) 网络；同一 URL 的并发请求合并成一次，失败不写缓存、下次自动重试
-final class KXImageCache {
+final class KXImageCache: @unchecked Sendable {
     static let shared = KXImageCache()
+
+    /// 同步读内存缓存：cell 复用时先查这里，命中就不必再建 Task、也不必先清空图片（否则会闪一下）。
+    func cachedImage(for url: URL) -> UIImage? {
+        memory.object(forKey: url as NSURL)
+    }
+
+    /// 在后台用 ImageIO 强制解码并按显示尺寸降采样。
+    /// `UIImage(data:)` 是懒解码：位图直到第一次绘制才在主线程展开，列表滚动时正好集中触发，
+    /// 是「滚起来一顿一顿」最隐蔽的来源。这里让解码发生在后台，进内存的已是可直接合成的图像。
+    private static func decodeImage(_ data: Data, maxPixel: CGFloat?) -> UIImage? {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil) else {
+            return UIImage(data: data)
+        }
+        let limit = max(64, Int(maxPixel ?? 2048))
+        let opts: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: limit
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else {
+            return UIImage(data: data)
+        }
+        return UIImage(cgImage: cg)
+    }
 
     private let memory = NSCache<NSURL, UIImage>()   // NSCache 自身线程安全
     private let lock = NSLock()
@@ -28,19 +53,21 @@ final class KXImageCache {
         pruneIfNeeded()
     }
 
-    func image(for url: URL) async -> UIImage? {
-        if let hit = memory.object(forKey: url as NSURL) { return hit }
+    func image(for url: URL, maxPixel: CGFloat? = nil) async -> UIImage? {
+        if let hit = cachedImage(for: url) { return hit }
 
-        // 同一 URL 同时被多个 cell 请求时只发一次网络请求
+        // 同一 URL 同时被多个 cell 请求时只发一次网络请求。
+        // 显式 detached 到后台队列：避免调用方来自 @MainActor 时把磁盘读取和图片解码继承到主线程。
         let task: Task<UIImage?, Never> = {
             lock.lock(); defer { lock.unlock() }
             if let running = inflight[url]?.task { return running }
             let token = UUID()
-            let t = Task<UIImage?, Never> {
+            let t: Task<UIImage?, Never> = Task.detached(priority: .utility) { [self] in
                 // 创建者自己清理（同步上下文），避免多个等待者各自清空字典造成竞态
                 defer { self.clearInflight(url, token: token) }
                 let file = self.diskFile(for: url)
-                if let data = try? Data(contentsOf: file), let img = UIImage(data: data) {
+                if let data = try? Data(contentsOf: file),
+                   let img = KXImageCache.decodeImage(data, maxPixel: maxPixel) {
                     self.store(img, for: url)
                     return img
                 }
@@ -50,7 +77,8 @@ final class KXImageCache {
                 do {
                     let (data, resp) = try await URLSession.shared.data(for: req)
                     let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-                    guard code == 200, let img = UIImage(data: data) else { return nil }
+                    guard code == 200,
+                          let img = KXImageCache.decodeImage(data, maxPixel: maxPixel) else { return nil }
                     self.store(img, for: url)
                     try? data.write(to: file, options: .atomic)
                     self.pruneIfNeeded()
@@ -127,6 +155,7 @@ struct KXCachedImage: View {
         }
         .task(id: url) {
             guard let url else { image = nil; return }
+            if let hit = KXImageCache.shared.cachedImage(for: url) { image = hit; return }
             image = nil
             let loaded = await KXImageCache.shared.image(for: url)
             guard !Task.isCancelled else { return }
@@ -168,9 +197,12 @@ struct KXAvatar: View {
         .frame(width: size, height: size)
         .accessibilityHidden(true)     // 头像装饰性，昵称已经承担语义
         .task(id: requestURL) {
+            guard let url = requestURL else { image = nil; return }
+            // 命中内存缓存就同步显示：不建 Task、不先清空，滚动复用时头像不再闪一下。
+            if let hit = KXImageCache.shared.cachedImage(for: url) { image = hit; return }
             image = nil
-            guard let url = requestURL else { return }
-            let loaded = await KXImageCache.shared.image(for: url)
+            let loaded = await KXImageCache.shared.image(for: url,
+                                                          maxPixel: size * UIScreen.main.scale)
             guard !Task.isCancelled else { return }
             image = loaded
         }
