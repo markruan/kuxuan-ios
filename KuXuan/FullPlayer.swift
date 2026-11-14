@@ -898,7 +898,7 @@ struct FullScreenLyricsView: View {
         .preferredColorScheme(.dark)
         .onAppear { tick = player.currentTime; recompute(); setLyricsLandscape(true); setLyricsIdle(true) }
         .onReceive(tickTimer) { _ in
-            let nt = player.currentTime
+            let nt = player.playbackTime
             guard abs(nt - tick) > 0.02 else { return }
             tick = nt
             recompute()
@@ -1120,7 +1120,7 @@ struct VinylDiscLyricsView: View {
             setLyricsLandscape(true); setLyricsIdle(true)
         }
         .onReceive(tickTimer) { _ in
-            let nt = player.currentTime
+            let nt = player.playbackTime
             guard abs(nt - tick) > 0.02 else { return }
             tick = nt
             driveIndex()
@@ -1362,7 +1362,7 @@ struct AIDirectorLyricsView: View {
         .preferredColorScheme(.dark)
         .onAppear { tick = player.currentTime; activeIndex = findIndex(tick); setLyricsLandscape(true); setLyricsIdle(true) }
         .onReceive(tickTimer) { _ in
-            let nt = player.currentTime
+            let nt = player.playbackTime
             guard abs(nt - tick) > 0.02 else { return }
             tick = nt
             driveIndex()
@@ -1645,7 +1645,7 @@ struct MiSideLyricsView: View {
         .onReceive(tickTimer) { _ in
             // currentTime 每 0.5s 才由播放器更新一次；过滤无变化的采样，
             // 把视图重建从 20 次/秒降到约 2 次/秒，根治渲染服务看门狗重启
-            let nt = player.currentTime
+            let nt = player.playbackTime
             guard abs(nt - tick) > 0.02 else { return }
             tick = nt
             drive()
@@ -1870,7 +1870,7 @@ struct BounceLyricsView: View {
         .preferredColorScheme(.dark)
         .onAppear { tick = player.currentTime; activeIndex = findIndex(tick); setLyricsLandscape(true); setLyricsIdle(true) }
         .onReceive(tickTimer) { _ in
-            let nt = player.currentTime
+            let nt = player.playbackTime
             guard abs(nt - tick) > 0.02 else { return }
             tick = nt
             drive()
@@ -2005,7 +2005,8 @@ struct BounceLyricsView: View {
                         .foregroundColor(.white.opacity(0.55))
                         .lineLimit(nil)
                         .minimumScaleFactor(1.0)
-                        .multilineTextAlignment(.leading)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
                 }
             }
             // 常态即为放大态(scale 1)：入场只做轻微弹入，即使动画被打断也不会显得"没放大"
@@ -2058,28 +2059,57 @@ struct BounceLyricsView: View {
             // placeSubviews 又拿 bounds.width 重新折行，两处基准不一致 → 第二行被裁掉。
             let maxW = Self.flowWidth(proposal.width)
             let spacing: CGFloat = 3
-            var x: CGFloat = 0, y: CGFloat = 0, lineH: CGFloat = 0, totalH: CGFloat = 0
-            for s in subviews {
-                let sz = s.sizeThatFits(.unspecified)
-                if x + sz.width > maxW, x > 0 { y += lineH; x = 0; lineH = 0 }
-                x += sz.width + spacing
-                lineH = max(lineH, sz.height)
-                totalH = max(totalH, y + lineH)
+            let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+            let info = Self.layoutLines(sizes, maxW: maxW, spacing: spacing)
+            var totalH: CGFloat = 0, lineH: CGFloat = 0, prevLine = -1
+            for i in sizes.indices {
+                if info.lineOf[i] != prevLine {
+                    if prevLine >= 0 { totalH += lineH }
+                    lineH = 0; prevLine = info.lineOf[i]
+                }
+                lineH = max(lineH, sizes[i].height)
             }
+            totalH += lineH
             // 返回固定宽度（而不是实际内容宽度），保证 place 阶段用同一换行基准
             return CGSize(width: maxW, height: max(totalH, 1))
         }
         func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
             let spacing: CGFloat = 3
             let maxW = min(bounds.width, Self.flowWidth(proposal.width))
-            var x: CGFloat = 0, y: CGFloat = 0, lineH: CGFloat = 0
-            for s in subviews {
-                let sz = s.sizeThatFits(.unspecified)
-                if x + sz.width > maxW, x > 0 { y += lineH; x = 0; lineH = 0 }
-                s.place(at: CGPoint(x: bounds.minX + x, y: bounds.minY + y), anchor: .topLeading, proposal: .unspecified)
-                x += sz.width + spacing
-                lineH = max(lineH, sz.height)
+            let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+            let info = Self.layoutLines(sizes, maxW: maxW, spacing: spacing)
+            let lineCount = info.lineWidth.count
+            // 每行最高子视图高度与起始 y
+            var lineTopY: [CGFloat] = []
+            var y = bounds.minY
+            for l in 0..<lineCount {
+                var h: CGFloat = 0
+                for i in sizes.indices where info.lineOf[i] == l { h = max(h, sizes[i].height) }
+                lineTopY.append(y)
+                y += h
             }
+            // 逐字放置：行内整体居中（横屏盒宽≈整屏宽时，逐字仍居中而非贴左）
+            var xInLine = Array(repeating: CGFloat(0), count: lineCount)
+            for i in sizes.indices {
+                let l = info.lineOf[i]
+                let startX = (maxW - info.lineWidth[l]) / 2
+                subviews[i].place(at: CGPoint(x: bounds.minX + startX + xInLine[l], y: lineTopY[l]),
+                                 anchor: .topLeading, proposal: .unspecified)
+                xInLine[l] += sizes[i].width + spacing
+            }
+        }
+        /// 共用折行：返回每字所属行号与每行宽度（不含行尾间距），sizeThatFits 与 placeSubviews 必须一致
+        private static func layoutLines(_ sizes: [CGSize], maxW: CGFloat, spacing: CGFloat) -> (lineOf: [Int], lineWidth: [CGFloat]) {
+            var lineOf: [Int] = []
+            var lineWidth: [CGFloat] = [0]
+            var x: CGFloat = 0, lineIdx = 0
+            for sz in sizes {
+                if x + sz.width > maxW, x > 0 { lineIdx += 1; lineWidth.append(0); x = 0 }
+                lineOf.append(lineIdx)
+                x += sz.width + spacing
+                lineWidth[lineIdx] = x - spacing
+            }
+            return (lineOf, lineWidth)
         }
     }
 
