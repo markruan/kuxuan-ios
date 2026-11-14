@@ -248,7 +248,7 @@ struct HomeView: View {
     @State private var sodaModes: [[String: Any]] = []
     @State private var sodaModesLoading = false
 
-        // 智能推荐双卡：网易云·心动模式（heartSongs）+ 汽水·推荐音乐（占位引导，SodaAuth 未实现）
+        // 智能推荐双卡：云村·心动模式（heartSongs）+ 汽水·推荐音乐（占位引导，SodaAuth 未实现）
         @State private var heartSongs: [Song] = []
         @State private var heartChecked = false
         @State private var heartLoading = false
@@ -599,7 +599,7 @@ struct HomeView: View {
                 Button { showAccount = true } label: {
                     HStack(spacing: 8) {
                         KXIcon(icon: .person, size: 16, color: .kxAccent)
-                        Text("绑定网易云后查看我的歌单").font(KXFont.scaled(13)).foregroundColor(.secondary)
+                        Text("绑定云村后查看我的歌单").font(KXFont.scaled(13)).foregroundColor(.secondary)
                         Spacer()
                         KXIcon(icon: .chevron, size: 14, color: .secondary)
                     }
@@ -882,7 +882,7 @@ struct HomeView: View {
         .padding(.horizontal, 16)
     }
 
-    // MARK: 每日推荐（网易云每日歌曲推荐）
+    // MARK: 每日推荐（云村每日歌曲推荐）
     // 后端优先用已绑定账号的个性化推荐，账号无推荐时回退上游默认推荐，
     // 因此无论是否绑定都能拿到一组每日歌曲。横向卡片轨道 + 「播放全部」。
     @ViewBuilder
@@ -940,7 +940,7 @@ struct HomeView: View {
         }
     }
 
-    // MARK: 智能推荐双卡（首页高频入口：网易云·心动模式 + 汽水·推荐音乐）
+    // MARK: 智能推荐双卡（首页高频入口：云村·心动模式 + 汽水·推荐音乐）
     // 双卡并排只占一行纵向高度，避免推荐类入口过多挤占歌单/排行榜曝光。
     private var smartRecommendSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -958,7 +958,7 @@ struct HomeView: View {
         let count = heartSongs.count
         let buttonText = bound ? (count > 0 ? "播放" : "准备中…") : "去绑定"
         return smartRecommendTile(
-            source: "网易云",
+            source: "云村",
             sourceColor: Color(red: 0.76, green: 0.05, blue: 0.05),
             title: "心动模式",
             subtitle: heartSubtitle,
@@ -991,7 +991,7 @@ struct HomeView: View {
     }
 
     private var heartSubtitle: String {
-        if !auth.ncmBound { return "去个人中心绑定网易云后开启" }
+        if !auth.ncmBound { return "去个人中心绑定云村后开启" }
         if heartLoading && heartSongs.isEmpty { return "加载中…" }
         if heartSongs.isEmpty { return "心动模式准备中" }
         return "已备好 \(heartSongs.count) 首"
@@ -1070,7 +1070,7 @@ struct HomeView: View {
                 KXIcon(icon: .note, size: 22, color: .kxAccent)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("开启每日歌曲推荐").font(.subheadline.bold())
-                    Text("绑定网易云账号后，为你精准推荐").font(.caption)
+                    Text("绑定云村账号后，为你精准推荐").font(.caption)
                         .foregroundColor(.secondary)
                 }
                 Spacer()
