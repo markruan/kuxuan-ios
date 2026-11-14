@@ -135,6 +135,48 @@ struct KXCachedImage: View {
     }
 }
 
+/// 统一圆形头像（个人中心 / 评论区共用）。
+/// 之前两处各自写 `KXCachedImage(placeholder: nil).clipShape(Circle())`：
+/// `scaledToFill` 的图片没有显式 frame，在 ZStack 里会按原图像素提议尺寸，
+/// 34pt / 62pt 的头像位只能看到放大后的一小块甚至空白；且加载失败时是 EmptyView，
+/// 只剩渐变圆底，看起来和「默认头像」一模一样。
+/// 这里固定尺寸 + 裁剪 + 明确的加载状态，失败自动回退人形图标。
+struct KXAvatar: View {
+    let urlString: String?
+    var size: CGFloat = 40
+    var background: LinearGradient = .kxSoft
+    @State private var image: UIImage?
+
+    /// 头像按显示尺寸的 2 倍像素请求降采样图（最小 80），小图位不拉 1024px 原图。
+    private var requestURL: URL? {
+        APIClient.proxiedPicURL(urlString, size: max(80, Int(size * 2)))
+    }
+
+    var body: some View {
+        ZStack {
+            Circle().fill(background)
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: size, height: size)
+                    .clipShape(Circle())
+            } else {
+                KXIcon(icon: .person, size: size * 0.48, color: .kxAccent)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)     // 头像装饰性，昵称已经承担语义
+        .task(id: requestURL) {
+            image = nil
+            guard let url = requestURL else { return }
+            let loaded = await KXImageCache.shared.image(for: url)
+            guard !Task.isCancelled else { return }
+            image = loaded
+        }
+    }
+}
+
 // 封面图通用组件（多页面复用）
 // 关键：scaledToFill 的图片必须被 .clipped() 约束，否则会按原图像素撑开父视图，
 // 在 LazyVGrid 中把行高顶坏，导致第二行图片与第一行重叠。
