@@ -146,7 +146,37 @@ final class PlayerEngine: ObservableObject {
     }
 
     func playCurrent(openFull: Bool = true) {
-        guard let s = current, let url = APIClient.streamURL(s.file) else { return }
+        guard let s = current else { return }
+        // 汽水加密流：先经本地 bridge 下载并解密成明文 m4a，再交给 AVPlayer。
+        if s.file.hasPrefix("soda:") {
+            let trackId = String(s.file.dropFirst("soda:".count))
+            loadAndPlaySoda(trackId: trackId, openFull: openFull)
+            return
+        }
+        guard let url = APIClient.streamURL(s.file) else { return }
+        playItem(at: url, openFull: openFull)
+    }
+
+    /// 汽水曲目：异步拉取解密后的本地音频文件，拿到 URL 后走与网易云相同的装载逻辑。
+    private func loadAndPlaySoda(trackId: String, openFull: Bool) {
+        isPlaying = false
+        Task {
+            do {
+                let url = try await SodaAudioLoader.shared.load(trackId: trackId)
+                await MainActor.run { [weak self] in
+                    self?.playItem(at: url, openFull: openFull)
+                }
+            } catch {
+                await MainActor.run { [weak self] in
+                    self?.showPlayError(error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    /// 共用装载逻辑：用给定（已解密/直链）URL 装载并播放当前曲目。
+    private func playItem(at url: URL, openFull: Bool) {
+        let s = current!
         try? AVAudioSession.sharedInstance().setActive(true)
         let item = AVPlayerItem(url: url)
         player.replaceCurrentItem(with: item)
