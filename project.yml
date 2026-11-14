@@ -19,11 +19,14 @@ targets:
       - path: KuXuan/API.swift
       - path: KuXuan/ImageColor.swift
       - path: KuXuan/PlayerEngine.swift
+      - path: KuXuan/SodaAudioLoader.swift
       - path: KuXuan/AuthStore.swift
       - path: KuXuan/AccountViews.swift
       - path: KuXuan/CommentView.swift
       - path: KuXuan/HomeView.swift
       - path: KuXuan/PlaylistView.swift
+      - path: KuXuan/SodaPlaylistView.swift
+      - path: KuXuan/SodaModesView.swift
       - path: KuXuan/FullPlayer.swift
       - path: KuXuan/QueueSheet.swift
       - path: KuXuan/MiniPlayer.swift
