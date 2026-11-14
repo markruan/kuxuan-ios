@@ -203,11 +203,11 @@ struct PlaylistView: View {
         loading = false
     }
 
-    // MARK: 收藏 / 取消收藏歌单（真实写入网易云账号）
+    // MARK: 收藏 / 取消收藏歌单（真实写入云村账号）
     private func loadSubscribeState() async {
         guard auth.ncmBound else { subscribed = false; return }
         // 复用已缓存的歌单列表，避免每次进歌单页都打一次 /api/ncm/playlists。
-        // 否则进页即消耗掉网易云共享会话的限流额度，用户点「收藏」首点就被判
+        // 否则进页即消耗掉云村共享会话的限流额度，用户点「收藏」首点就被判
         // 「操作过于频繁」。列表为空（首启 / 解绑后）才拉取，成功收藏后会刷新。
         if auth.ncmPlaylists.isEmpty { await auth.loadNCMPlaylists() }
         subscribed = auth.ncmPlaylists.contains { $0.id == ref.id && $0.subscribed }
@@ -216,13 +216,13 @@ struct PlaylistView: View {
     private func toggleSubscribe() async {
         guard let cur = subscribed else { subBusy = false; return }
         guard auth.ncmBound else {
-            subMsg = "请先在「我的」页绑定网易云账号"
+            subMsg = "请先在「我的」页绑定云村账号"
             subBusy = false
             return
         }
         subBusy = true; subMsg = nil
         let target = !cur
-        // 乐观更新：后端对订阅接口有全局限流（多为多用户共享同一网易云会话），
+        // 乐观更新：后端对订阅接口有全局限流（多为多用户共享同一云村会话），
         // 首点就可能被「操作过于频繁」。先立即切换 UI 状态，真正写入放后台异步重试，
         // 等限流窗口过去后再落库，用户无需反复手动点击。
         subscribed = target
@@ -244,7 +244,7 @@ struct PlaylistView: View {
                 if ok {
                     await MainActor.run {
                         auth.syncSubscription(id: id, subscribed: target)
-                        subMsg = "已同步到网易云"
+                        subMsg = "已同步到云村"
                         subBusy = false
                     }
                     return
