@@ -23,8 +23,9 @@ struct PlaylistView: View {
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             } else if loading {
-                ProgressView("加载中…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                KXSkeletonList()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(24)
             } else {
                 errorView(errorMsg ?? "加载失败")
             }
@@ -118,10 +119,10 @@ struct PlaylistView: View {
             HStack(spacing: 7) {
                 KXIcon(icon: icon, size: 15,
                        color: primary ? .white : .kxAccent, filled: primary)
-                Text(title).font(.system(size: 14, weight: .semibold))
+                Text(title).font(KXFont.scaled(14, weight: .semibold))
             }
             .foregroundColor(primary ? .white : .kxAccent)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .padding(.vertical, 10)
             .background {
                 if primary {
@@ -134,6 +135,7 @@ struct PlaylistView: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
     }
 
     // MARK: 歌曲行
@@ -157,7 +159,7 @@ struct PlaylistView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(s.title)
-                    .font(.system(size: 15, weight: .medium)).lineLimit(1)
+                    .font(KXFont.scaled(15, weight: .medium)).lineLimit(1)
                     .foregroundColor(playing ? .kxAccent : .primary)
                 Text(s.artist).font(.caption).foregroundColor(.secondary).lineLimit(1)
             }
@@ -165,12 +167,22 @@ struct PlaylistView: View {
             Button { player.toggleFav(s) } label: {
                 KXIcon(icon: fav ? .heartFill : .heart, size: 16,
                        color: fav ? .kxAccent : .secondary.opacity(0.6))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+                    .accessibilityHidden(true)
             }
             .buttonStyle(.plain)
-            .frame(width: 30)
+            .accessibilityLabel(fav ? "取消收藏 \(s.title)" : "收藏 \(s.title)")
+            .accessibilityValue(fav ? "已收藏" : "未收藏")
         }
         .padding(.vertical, 7)
         .contentShape(Rectangle())
+        // 整行点击播放是纯手势：VoiceOver 需要语义标签与一个可执行的自定义动作
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("第 \(i + 1) 首，\(s.title)，\(s.artist)")
+        .accessibilityAction(named: "播放") {
+            player.playSongs(detail?.songs ?? [], index: i)
+        }
         .onTapGesture { player.playSongs(detail?.songs ?? [], index: i) }
     }
 
@@ -215,8 +227,10 @@ struct PlaylistView: View {
         // 首点就可能被「操作过于频繁」。先立即切换 UI 状态，真正写入放后台异步重试，
         // 等限流窗口过去后再落库，用户无需反复手动点击。
         subscribed = target
-        subMsg = target ? "已收藏到网易云" : "已取消收藏"
-        subBusy = false
+        subMsg = target ? "正在同步收藏…" : "正在同步取消…"
+        // subBusy 必须一直保持 true 到后台提交彻底结束：
+        // 原实现在这里就释放，用户可在旧提交还在退避重试时再次点击，
+        // 触发反向请求并发，最终落库状态与 UI 相反。
         await commitSubscribe(id: ref.id, target: target)
     }
 
@@ -229,13 +243,18 @@ struct PlaylistView: View {
             do {
                 let (ok, err) = try await APIClient.ncmSubscribePlaylist(id: id, subscribe: target)
                 if ok {
-                    await MainActor.run { auth.syncSubscription(id: id, subscribed: target) }
+                    await MainActor.run {
+                        auth.syncSubscription(id: id, subscribed: target)
+                        subMsg = "已同步到网易云"
+                        subBusy = false
+                    }
                     return
                 }
                 guard let e = err, e.contains("频繁") else {
                     await MainActor.run {
                         if subscribed == target { subscribed = !target }
                         subMsg = err ?? "操作失败"
+                        subBusy = false
                     }
                     return
                 }
@@ -247,7 +266,11 @@ struct PlaylistView: View {
             }
         }
         await MainActor.run {
-            subMsg = "收藏已记录，稍后网络顺畅时自动同步"
+            // 重试耗尽说明云端始终没写入成功：必须回滚乐观 UI，
+            // 否则界面显示「已收藏」但退出重进就没了（用户看到的假收藏）。
+            if subscribed == target { subscribed = !target }
+            subMsg = "同步失败，已还原，请稍后重试"
+            subBusy = false
         }
     }
 }
