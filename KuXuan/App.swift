@@ -77,7 +77,7 @@ struct RootView: View {
                     .environmentObject(auth)
                     .preferredColorScheme(nil)
             }
-        // 从网易云 App 切回来时立刻核对服务端绑定态与二维码状态
+        // 从云村 App 切回来时立刻核对服务端绑定态与二维码状态
         .onChange(of: scenePhase) { phase in
             if phase == .active { Task { await auth.resumeQRCheck() } }
         }
