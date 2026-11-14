@@ -599,9 +599,7 @@ struct HomeView: View {
         if !dailyChecked {
             EmptyView()
         } else if dailyLoading && dailySongs.isEmpty {
-            ProgressView().scaleEffect(0.8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
+            KXDailySkeleton()
         } else if let err = dailyError, dailySongs.isEmpty {
             HStack(spacing: 6) {
                 KXIcon(icon: .warning, size: 16, color: .secondary)
@@ -845,11 +843,8 @@ struct SearchSheet: View {
     @ViewBuilder
     private var content: some View {
         if loading {
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("搜索中…").font(.caption).foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            KXSearchSkeleton(circular: tab == .artists, chevron: tab == .playlists)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         } else if let e = err {
             VStack(spacing: 12) {
                 KXIcon(icon: .warning, size: 40, color: .secondary)
