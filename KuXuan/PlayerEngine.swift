@@ -246,11 +246,12 @@ final class PlayerEngine: ObservableObject {
                     guard latestFavSeq[song.id] == seq else { return }
                     latestFavSeq.removeValue(forKey: song.id)
                     // 后端 /ncm/like 的 verified=false 只表示 /likelist 缓存未刷新，写入本身已成功，
-                    // 绝不能据此回滚本地收藏；成功也不弹提示，红心状态变化本身就是反馈。
+                    // 绝不能据此回滚本地收藏。红心状态变化是反馈之一，仍补一条成功确认提示。
                     unmarkLocalOnly(song.id)
                     if let n = cloudFavCount {
                         cloudFavCount = max(0, n + (willFav ? 1 : -1))
                     }
+                    showFavNotice(willFav ? "已收藏" : "已取消收藏")
                 }
             } catch {
                 let msg = error.localizedDescription
