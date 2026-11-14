@@ -28,7 +28,7 @@ final class PlayerEngine: ObservableObject {
     @Published var lyrics: [LyricLine] = []
     @Published var favs: Set<String> = []
     @Published var favSongs: [Song] = []      // 完整歌曲对象，供「我的收藏」列表展示/播放
-    /// 「未与云端确认」的本地收藏 id：本地曲库、未绑定网易云期间的收藏。
+    /// 「未与云端确认」的本地收藏 id：本地曲库、未绑定云村期间的收藏。
     /// 云端同步时必须保留，否则会被误判成「云端已取消」而丢掉。持久化避免重启后丢失。
     private var localOnlyFavIDs: Set<String> = Set(
         UserDefaults.standard.stringArray(forKey: "kuxuan_local_only_favs") ?? [])
@@ -43,14 +43,14 @@ final class PlayerEngine: ObservableObject {
     @Published var history: [Song] = []
     /// 待打开的歌手页（任意位置点歌手名/头像都会设置它，由 RootView 的 fullScreenCover 承接）
     @Published var artistToShow: MiniArtist?
-    /// 收藏（关注）的歌手，与网易云「关注」同步；本地缓存保证离线也能展示
+    /// 收藏（关注）的歌手，与云村「关注」同步；本地缓存保证离线也能展示
     @Published var favArtists: [MiniArtist] = []
     private var favArtistSet: Set<String> = []
     /// 收藏歌手的短提示（成功 / 未连接 / 失败回滚）
     @Published var favArtistNotice: String?
     /// 收藏云同步的短提示（成功 / 未绑定 / 失败回滚），由 UI 以浮层展示，约 2.8s 自动消失
     @Published var favNotice: String?
-    /// 网易云账号里真实存在的红心数量（nil = 尚未成功读取过）
+    /// 云村账号里真实存在的红心数量（nil = 尚未成功读取过）
     @Published var cloudFavCount: Int?
     /// 收藏云端同步是否已结束（成功或失败都算）。首次同步完成前，空收藏列表显示骨架而不是空态文案。
     @Published var cloudSyncDone = false
@@ -157,7 +157,7 @@ final class PlayerEngine: ObservableObject {
         playItem(at: url, openFull: openFull)
     }
 
-    /// 汽水曲目：异步拉取解密后的本地音频文件，拿到 URL 后走与网易云相同的装载逻辑。
+    /// 汽水曲目：异步拉取解密后的本地音频文件，拿到 URL 后走与云村相同的装载逻辑。
     private func loadAndPlaySoda(trackId: String, openFull: Bool) {
         isPlaying = false
         Task {
@@ -261,7 +261,7 @@ final class PlayerEngine: ObservableObject {
         latestFavSeq[song.id] = seq
 
         // 关键修复：在线歌曲 id 是 "online:<数字>"（后端 _norm_song 统一加前缀），
-        // 必须剥掉前缀才能拿到真实网易云 id。此前直接判断 song.id 是否纯数字，
+        // 必须剥掉前缀才能拿到真实云村 id。此前直接判断 song.id 是否纯数字，
         // 结果所有在线歌曲都被挡在云同步之外、只写本机 —— 用户说的「假收藏」。
         // 只有本地曲库（id 非数字）才确实无法对应云端歌曲，仅存本机。
         guard let ncmID = song.ncmID else {
@@ -306,7 +306,7 @@ final class PlayerEngine: ObservableObject {
         }
     }
 
-    /// 从网易云拉取真实红心列表，合并进「我的收藏」，让列表反映云端而不是只反映本机。
+    /// 从云村拉取真实红心列表，合并进「我的收藏」，让列表反映云端而不是只反映本机。
     /// 策略是只增不减：云端有的补齐，本地独有的（本地曲库、未绑定期间的收藏）保留。
     /// 任何网络/解析失败都不改动本地数据，避免把用户收藏清空。
     func syncFavsFromCloud() async {
@@ -374,11 +374,11 @@ final class PlayerEngine: ObservableObject {
 
     func isFav(_ id: String) -> Bool { favs.contains(id) }
 
-    // MARK: - 收藏歌手（同步网易云关注）
+    // MARK: - 收藏歌手（同步云村关注）
     func isFavArtist(_ id: String) -> Bool { favArtistSet.contains(id) }
 
-    /// 收藏 / 取消收藏歌手：真实写入网易云「关注」。乐观更新本地，再回写云端；
-    /// 失败则回滚并提示（未连接网易云时明确引导去个人中心连接）。
+    /// 收藏 / 取消收藏歌手：真实写入云村「关注」。乐观更新本地，再回写云端；
+    /// 失败则回滚并提示（未连接云村时明确引导去个人中心连接）。
     func toggleFavArtist(_ artist: MiniArtist) {
         let willFav = !isFavArtist(artist.id)
         applyFavArtist(artist, fav: willFav)
@@ -402,7 +402,7 @@ final class PlayerEngine: ObservableObject {
                         applyFavArtist(artist, fav: !willFav)
                     }
                     if msg.contains("尚未绑定") || msg.contains("NOT_BOUND") {
-                        showFavArtistNotice("请先在个人中心连接网易云")
+                        showFavArtistNotice("请先在个人中心连接云村")
                     } else {
                         showFavArtistNotice("操作失败：\(msg)")
                     }
@@ -411,7 +411,7 @@ final class PlayerEngine: ObservableObject {
         }
     }
 
-    /// 从网易云拉取真实关注列表，合并进本地收藏歌手（只增不减，避免覆盖本地缓存）。
+    /// 从云村拉取真实关注列表，合并进本地收藏歌手（只增不减，避免覆盖本地缓存）。
     func syncFavArtistsFromCloud() async {
         defer { Task { @MainActor in self.cloudSyncDone = true } }
         do {
