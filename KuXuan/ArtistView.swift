@@ -93,9 +93,9 @@ struct ArtistDetailContent: View {
                 topBar
                 Group {
                     if loading {
-                        KXSkeletonList()
+                        KXArtistSkeleton()
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                            .padding(16)
+                            .padding(.horizontal, 16)
                     } else if let e = err {
                         VStack(spacing: 12) {
                             KXIcon(icon: .warning, size: 40, color: .orange)
