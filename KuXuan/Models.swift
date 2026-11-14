@@ -670,3 +670,20 @@ struct ServiceStatus {
         self.onlineApi = (dict["onlineApi"] as? String) ?? ""
     }
 }
+
+// MARK: - 汽水音乐（个人测试，数据来自本地 soda-bridge）
+struct SodaPlaylist: Identifiable {
+    let id: String
+    let name: String
+    let cover: String
+    let trackCount: Int
+    let isPrivate: Bool
+    init(dict: [String: Any]) {
+        self.id = String(describing: dict["id"] ?? "")
+        self.name = (dict["name"] as? String) ?? "未命名歌单"
+        self.cover = (dict["cover"] as? String) ?? ""
+        self.trackCount = (dict["track_count"] as? Int) ?? 0
+        let p = dict["is_private"] as? String ?? ""
+        self.isPrivate = p == "1" || (dict["is_private"] as? Bool) ?? false
+    }
+}
