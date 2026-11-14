@@ -23,9 +23,8 @@ struct PlaylistView: View {
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             } else if loading {
-                KXSkeletonList()
+                KXPlaylistSkeleton()
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .padding(24)
             } else {
                 errorView(errorMsg ?? "加载失败")
             }
