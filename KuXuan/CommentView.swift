@@ -23,14 +23,12 @@ struct CommentSheet: View {
     @State private var noNewPages = 0
     @State private var moreError: String?
 
-    @State private var draft = ""
     @State private var replyTo: KXComment?
-    @State private var sending = false
     @State private var sendNotice: String?
-    @FocusState private var composerFocused: Bool
+    /// 分页哨兵按 offset 节流：List 复用会让 onAppear 反复触发，不该每次都新建一个请求 Task。
+    @State private var lastSentinelOffset = -1
 
     private let pageSize = 20
-    private let maxCommentLength = 140
 
     var body: some View {
         NavigationStack {
@@ -75,7 +73,15 @@ struct CommentSheet: View {
                     .listStyle(.insetGrouped)
                 }
             }
-            .safeAreaInset(edge: .bottom) { composer }
+            // 输入框状态收在独立子视图里：打字时只重算输入框，不再带着整个 List 的
+            // 所有 cell 一起重算（旧版 draft 挂在 CommentSheet 上，每敲一个字都全量 diff）。
+            .safeAreaInset(edge: .bottom) {
+                CommentComposer(songID: songID,
+                                replyTo: replyTo,
+                                onCancelReply: { replyTo = nil },
+                                onSent: { await load(reset: true) },
+                                sendNotice: $sendNotice)
+            }
             .navigationTitle(songTitle.isEmpty ? "评论" : songTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -123,14 +129,148 @@ struct CommentSheet: View {
                 Spacer()
             }
             .padding(.vertical, 10)
-            .id("kx-page-\(offset)-\(latest.count)-\(moreError == nil)")
-            .onAppear { Task { await loadMore() } }
+            // 只在「翻到新的一页」时换 id；旧版把 latest.count / moreError 也拼进 id，
+            // 页内任意状态变化都会重建哨兵并重新触发 onAppear。
+            .id("kx-page-\(offset)")
+            .onAppear {
+                guard lastSentinelOffset != offset else { return }
+                lastSentinelOffset = offset
+                Task { await loadMore() }
+            }
         }
     }
 
-    // MARK: 底部评论输入框（发评论 / 回复）
+    // 底部输入框拆成独立子视图 CommentComposer（文件末尾），避免打字重算整个 List。
+
+    // MARK: 评论行（点回复图标进入回复态）
     @ViewBuilder
-    private var composer: some View {
+    private func commentRow(_ c: KXComment) -> some View {
+        HStack(alignment: .top, spacing: 11) {
+            KXAvatar(urlString: c.avatar, size: 34)
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text(c.user).font(.caption.bold()).lineLimit(1)
+                    Spacer()
+                    if !c.displayTime.isEmpty {
+                        Text(c.displayTime).font(.caption2).foregroundColor(.secondary)
+                    }
+                }
+                Text(c.content).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+                if !c.quote.isEmpty {
+                    Text(c.quote)
+                        .font(.caption).foregroundColor(.secondary)
+                        .padding(8)
+                        .background(Color(.secondarySystemFill))
+                        .cornerRadius(8)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                HStack(spacing: 6) {
+                    Spacer()
+                    Button {
+                        replyTo = c      // 输入框通过 onChange(of: replyTo?.id) 自己聚焦
+                    } label: {
+                        KXIcon(icon: .reply, size: 13, color: .secondary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                            .accessibilityHidden(true)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("回复 \(c.user)")
+                    KXIcon(icon: .thumb, size: 13, color: .secondary)
+                    Text(c.likedText).font(.caption2).foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    // MARK: 加载
+    @MainActor
+    private func loadMore() async {
+        guard loadedOnce, more, !reachedEnd, !loading, moreError == nil else { return }
+        await load(reset: false)
+    }
+
+    @MainActor
+    private func load(reset: Bool) async {
+        guard !songID.isEmpty else {
+            errorMsg = "这首歌没有可用的网易云 ID，无法加载评论"
+            return
+        }
+        if reset {
+            offset = 0
+            errorMsg = nil
+            moreError = nil
+            reachedEnd = false
+            noNewPages = 0
+            lastSentinelOffset = -1
+        }
+        guard !loading else { return }
+        loading = true
+        defer { loading = false }
+        do {
+            let r = try await APIClient.comments(songID: songID,
+                                                 limit: pageSize, offset: offset)
+            if reset {
+                hot = r.hot
+                latest = r.comments
+                total = r.total
+            } else {
+                // 去重：上游翻页可能返回重复项
+                let exist = Set(latest.map { $0.id })
+                let fresh = r.comments.filter { !exist.contains($0.id) }
+                latest.append(contentsOf: fresh)
+                noNewPages = fresh.isEmpty ? noNewPages + 1 : 0
+            }
+            // offset 必须按「上游返回条数」前进，不能用去重后的条数，否则会卡在同一页
+            offset += r.comments.count
+            more = r.more && !r.comments.isEmpty
+            if noNewPages >= 2 { reachedEnd = true }
+            loadedOnce = true
+            moreError = nil
+            errorMsg = nil
+        } catch {
+            let msg = "评论加载失败：\(error.localizedDescription)"
+            if reset {
+                // 下拉刷新失败时保留已有列表，不要把整页变成错误页
+                errorMsg = loadedOnce ? nil : msg
+                moreError = loadedOnce ? msg : nil
+            } else {
+                moreError = msg
+            }
+        }
+    }
+
+}
+
+// MARK: - 独立评论输入框
+/// 把 draft / sending / 焦点全部收在这个子视图里。
+/// 旧版这些 @State 挂在 CommentSheet 上，每敲一个字符都会重算整个 body（含 List 的
+/// ForEach 和所有评论行）；现在打字只影响这一小块，列表完全不参与 diff。
+private struct CommentComposer: View {
+    @EnvironmentObject var auth: AuthStore
+    let songID: String
+    let replyTo: KXComment?
+    let onCancelReply: () -> Void
+    let onSent: () async -> Void
+    @Binding var sendNotice: String?
+
+    @State private var draft = ""
+    @State private var sending = false
+    @FocusState private var composerFocused: Bool
+    private let maxCommentLength = 140
+
+    /// 与真正发送时的 trim 口径一致：140 个有效字 + 首尾空格不应被判超长
+    private var draftCount: Int {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines).count
+    }
+    private var canSend: Bool {
+        auth.ncmBound && !sending && !songID.isEmpty
+            && draftCount > 0 && draftCount <= maxCommentLength
+    }
+
+    var body: some View {
         VStack(spacing: 0) {
             if let r = replyTo {
                 HStack(spacing: 8) {
@@ -138,7 +278,7 @@ struct CommentSheet: View {
                     Text("回复 @\(r.user)：\(r.content)")
                         .font(.caption2).foregroundColor(.secondary).lineLimit(1)
                     Spacer()
-                    Button { replyTo = nil } label: {
+                    Button { onCancelReply() } label: {
                         KXIcon(icon: .close, size: 14, color: .secondary)
                             .contentShape(Rectangle().inset(by: -16))
                             .accessibilityHidden(true)
@@ -186,119 +326,11 @@ struct CommentSheet: View {
         }
         .background(Color(.secondarySystemBackground))
         .overlay(alignment: .top) { Divider() }
-    }
-
-    /// 与真正发送时的 trim 口径一致：140 个有效字 + 首尾空格不应被判超长
-    private var draftCount: Int {
-        draft.trimmingCharacters(in: .whitespacesAndNewlines).count
-    }
-
-    private var canSend: Bool {
-        auth.ncmBound && !sending && !songID.isEmpty
-            && draftCount > 0 && draftCount <= maxCommentLength
-    }
-
-    // MARK: 评论行（点回复图标进入回复态）
-    @ViewBuilder
-    private func commentRow(_ c: KXComment) -> some View {
-        HStack(alignment: .top, spacing: 11) {
-            KXAvatar(urlString: c.avatar, size: 34)
-
-            VStack(alignment: .leading, spacing: 5) {
-                HStack {
-                    Text(c.user).font(.caption.bold()).lineLimit(1)
-                    Spacer()
-                    if !c.displayTime.isEmpty {
-                        Text(c.displayTime).font(.caption2).foregroundColor(.secondary)
-                    }
-                }
-                Text(c.content).font(.subheadline).fixedSize(horizontal: false, vertical: true)
-                if !c.quote.isEmpty {
-                    Text(c.quote)
-                        .font(.caption).foregroundColor(.secondary)
-                        .padding(8)
-                        .background(Color(.secondarySystemFill))
-                        .cornerRadius(8)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                HStack(spacing: 6) {
-                    Spacer()
-                    Button {
-                        replyTo = c
-                        composerFocused = true
-                    } label: {
-                        KXIcon(icon: .reply, size: 13, color: .secondary)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                            .accessibilityHidden(true)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("回复 \(c.user)")
-                    KXIcon(icon: .thumb, size: 13, color: .secondary)
-                    Text(c.likedText).font(.caption2).foregroundColor(.secondary)
-                }
-            }
-        }
-        .padding(.vertical, 4)
-    }
-
-    // MARK: 加载
-    @MainActor
-    private func loadMore() async {
-        guard loadedOnce, more, !reachedEnd, !loading, moreError == nil else { return }
-        await load(reset: false)
-    }
-
-    @MainActor
-    private func load(reset: Bool) async {
-        guard !songID.isEmpty else {
-            errorMsg = "这首歌没有可用的网易云 ID，无法加载评论"
-            return
-        }
-        if reset {
-            offset = 0
-            errorMsg = nil
-            moreError = nil
-            reachedEnd = false
-            noNewPages = 0
-        }
-        guard !loading else { return }
-        loading = true
-        defer { loading = false }
-        do {
-            let r = try await APIClient.comments(songID: songID,
-                                                 limit: pageSize, offset: offset)
-            if reset {
-                hot = r.hot
-                latest = r.comments
-                total = r.total
-            } else {
-                // 去重：上游翻页可能返回重复项
-                let exist = Set(latest.map { $0.id })
-                let fresh = r.comments.filter { !exist.contains($0.id) }
-                latest.append(contentsOf: fresh)
-                noNewPages = fresh.isEmpty ? noNewPages + 1 : 0
-            }
-            // offset 必须按「上游返回条数」前进，不能用去重后的条数，否则会卡在同一页
-            offset += r.comments.count
-            more = r.more && !r.comments.isEmpty
-            if noNewPages >= 2 { reachedEnd = true }
-            loadedOnce = true
-            moreError = nil
-            errorMsg = nil
-        } catch {
-            let msg = "评论加载失败：\(error.localizedDescription)"
-            if reset {
-                // 下拉刷新失败时保留已有列表，不要把整页变成错误页
-                errorMsg = loadedOnce ? nil : msg
-                moreError = loadedOnce ? msg : nil
-            } else {
-                moreError = msg
-            }
+        .onChange(of: replyTo?.id) { id in
+            if id != nil { composerFocused = true }
         }
     }
 
-    // MARK: 发送 / 回复（真实写入网易云账号）
     @MainActor
     private func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -310,9 +342,9 @@ struct CommentSheet: View {
             try await APIClient.ncmSendComment(songID: songID, content: text,
                                                commentID: replyTo?.id)
             draft = ""
-            replyTo = nil
+            onCancelReply()
             sendNotice = nil          // 成功不弹提示，输入框清空 + 列表刷新已是反馈
-            await load(reset: true)
+            await onSent()
         } catch {
             sendNotice = "发布失败：\(error.localizedDescription)"
         }
