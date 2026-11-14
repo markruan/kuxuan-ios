@@ -204,6 +204,64 @@ final class AuthStore: ObservableObject {
         ncmPlaylistsLoaded = false
     }
 
+    // MARK: - 汽水音乐（个人测试，数据来自本地 soda-bridge）
+    @Published var sodaBound = false
+    @Published var sodaProfileName = ""
+    @Published var sodaPlaylists: [SodaPlaylist] = []
+    @Published var sodaPlaylistsLoaded = false
+    @Published var sodaRecommend: [Song] = []
+
+    @MainActor
+    func refreshSoda() async {
+        do {
+            let (bound, _) = try await APIClient.sodaMe()
+            sodaBound = bound
+            if bound {
+                await loadSodaPlaylists()
+                await loadSodaRecommend()
+            } else {
+                sodaPlaylists = []
+            }
+        } catch {
+            sodaBound = false
+        }
+    }
+
+    @MainActor
+    func loadSodaPlaylists() async {
+        defer { sodaPlaylistsLoaded = true }
+        do { sodaPlaylists = (try await APIClient.sodaMyPlaylists()).map { SodaPlaylist(dict: $0) } }
+        catch { lastError = "汽水歌单拉取失败：\(error.localizedDescription)" }
+    }
+
+    @MainActor
+    func loadSodaRecommend() async {
+        do { sodaRecommend = try await APIClient.sodaRecommend() }
+        catch { /* 偶发失败保留上一次结果 */ }
+    }
+
+    @MainActor
+    func bindSoda(cookie: String) async -> Bool {
+        do {
+            let ok = try await APIClient.sodaBind(cookie: cookie)
+            if ok { await refreshSoda() }
+            return ok
+        } catch {
+            lastError = "汽水绑定失败：\(error.localizedDescription)"
+            return false
+        }
+    }
+
+    @MainActor
+    func unbindSoda() async {
+        // 汽水登录态由本地 bridge 持有（Cookie 在 bridge 侧），这里清本地态即可。
+        sodaBound = false
+        sodaProfileName = ""
+        sodaPlaylists = []
+        sodaPlaylistsLoaded = false
+        sodaRecommend = []
+    }
+
     // MARK: - 扫码登录
     @MainActor
     func startQR() async {
