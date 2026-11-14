@@ -245,7 +245,15 @@ struct HomeView: View {
     @State private var ncmBound = false
     @State private var dailyChecked = false
     @State private var dailyLoading = false
-    @State private var dailyError: String?
+        @State private var dailyError: String?
+    @State private var sodaModes: [[String: Any]] = []
+    @State private var sodaModesLoading = false
+
+        // 智能推荐双卡：网易云·心动模式（heartSongs）+ 汽水·推荐音乐（占位引导，SodaAuth 未实现）
+        @State private var heartSongs: [Song] = []
+        @State private var heartChecked = false
+        @State private var heartLoading = false
+        @State private var heartError: String?
 
     var body: some View {
         ScrollView {
@@ -255,8 +263,10 @@ struct HomeView: View {
                     if !h.hot.isEmpty { hotWords(h.hot) }
                     if !h.banners.isEmpty { bannerPager(h.banners) }
                     dailySection
+                    smartRecommendSection
                     if !h.playlists.isEmpty { recommendSection(h.playlists) }
                     myPlaylistsSection
+                    sodaModesSection
                     if !h.charts.isEmpty { chartSection(h.charts) }
                     if !h.newsongs.isEmpty { newSongSection(h.newsongs) }
                 } else if loading {
@@ -285,7 +295,9 @@ struct HomeView: View {
         // 不对 ScrollView 加 ignoresSafeArea(edges:.top)：会把标题顶进状态栏。
         .navigationBarHidden(true)
         .task {
-            await load(); await loadDaily()
+            await load(); await loadDaily(); await loadHeart()
+            // 汽水推荐/歌单：已绑定则拉取（未绑定 bridge 返回 NOT_BOUND，忽略）
+            await auth.refreshSoda()
             // 首页「我的歌单」依赖云端歌单；已绑定且首轮未加载时主动拉取一次
             if auth.ncmBound, !auth.ncmPlaylistsLoaded { await auth.refreshNCM() }
         }
@@ -638,7 +650,134 @@ struct HomeView: View {
                 }
                 .padding(.horizontal, 16)
             }
+            // 汽水歌单（个人测试）：并入「我的歌单」，加来源角标，点击直接播
+            sodaPlaylistsBlock
         }
+    }
+
+    // 汽水歌单网格（来源角标「汽水」），点击加载曲目直接播放（播放进现有 FullPlayer）
+    private var sodaPlaylistsBlock: some View {
+        let lists = auth.sodaPlaylists
+        return Group {
+            if !auth.sodaBound {
+                EmptyView()
+            } else if !auth.sodaPlaylistsLoaded {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    ForEach(0..<2, id: \.self) { _ in
+                        Color(.systemFill).frame(height: 150).clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+                .padding(.horizontal, 16)
+            } else if lists.isEmpty {
+                HStack(spacing: 8) {
+                    KXIcon(icon: .list, size: 16, color: .secondary)
+                    Text("汽水：还没有创建或收藏歌单").font(KXFont.scaled(13)).foregroundColor(.secondary)
+                }
+                .padding(12).kxCard(radius: 12, shadowRadius: 6).padding(.horizontal, 16)
+            } else {
+                let shown = Array(lists.prefix(4))
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    ForEach(shown) { pl in
+                        NavigationLink {
+                            SodaPlaylistView(id: pl.id, name: pl.name, cover: pl.cover)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ZStack {
+                                    Color(.systemFill)
+                                    KXCover(url: APIClient.coverURL(pl.cover, size: 260))
+                                }
+                                .aspectRatio(1, contentMode: .fill)
+                                .frame(maxWidth: .infinity)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                Text(pl.name).font(KXFont.scaled(13, weight: .semibold))
+                                    .foregroundColor(.primary).lineLimit(1)
+                                HStack(spacing: 4) {
+                                    Text("汽水").font(KXFont.scaled(10)).foregroundColor(.white)
+                                        .padding(.horizontal, 5).padding(.vertical, 1)
+                                        .background(Color(red: 0.06, green: 0.43, blue: 0.34))
+                                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                                    Text("\(pl.trackCount) 首").font(KXFont.scaled(11)).foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+
+    // MARK: 汽水探索模式（首页新增：单行横滑 6 卡，右滑展示；查看全部进独立页面）
+    @ViewBuilder
+    private var sodaModesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("汽水探索模式").font(.headline)
+                Spacer()
+                if auth.sodaBound {
+                    NavigationLink { SodaModesView() } label: {
+                        Text("查看全部").font(KXFont.scaled(12)).foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+
+            if !auth.sodaBound {
+                Button { showAccount = true } label: {
+                    HStack(spacing: 8) {
+                        KXIcon(icon: .person, size: 16, color: .kxAccent)
+                        Text("绑定汽水后体验探索模式").font(KXFont.scaled(13)).foregroundColor(.secondary)
+                        Spacer()
+                        KXIcon(icon: .chevron, size: 14, color: .secondary)
+                    }
+                    .padding(12).kxCard(radius: 12, shadowRadius: 6)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+            } else if sodaModesLoading {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(0..<6, id: \.self) { _ in
+                            Color(.systemFill).frame(width: 150, height: 132)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }
+                    }.padding(.horizontal, 16)
+                }
+            } else if !sodaModes.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(Array(sodaModes.prefix(6).enumerated()), id: \.offset) { _, sc in
+                            NavigationLink {
+                                SodaModesView(initialSceneId: sc["scene_mode_id"] as? String)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 0) {
+                                    KXCover(url: APIClient.coverURL(sc["cover_url"] as? String, size: 200))
+                                        .aspectRatio(1.5, contentMode: .fill)
+                                        .frame(width: 150, height: 100).clipped()
+                                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    Text(sc["text"] as? String ?? "未知模式")
+                                        .font(KXFont.scaled(12, weight: .semibold))
+                                        .foregroundColor(.primary).lineLimit(1)
+                                        .frame(width: 150).padding(.top, 6)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }.padding(.horizontal, 16)
+                }
+            }
+        }
+        .task { if auth.sodaBound && sodaModes.isEmpty { await loadSodaModes() } }
+    }
+
+    @MainActor
+    private func loadSodaModes() async {
+        guard auth.sodaBound else { return }
+        sodaModesLoading = true
+        do { sodaModes = try await APIClient.sodaModes() } catch { sodaModes = [] }
+        sodaModesLoading = false
     }
 
     // MARK: 榜单（横向分页：每页 3 个榜单卡，右滑翻页，固定高度不再无限下拉）
@@ -799,6 +938,101 @@ struct HomeView: View {
                     .padding(.horizontal, 16)
                 }
             }
+        }
+    }
+
+    // MARK: 智能推荐双卡（首页高频入口：网易云·心动模式 + 汽水·推荐音乐）
+    // 双卡并排只占一行纵向高度，避免推荐类入口过多挤占歌单/排行榜曝光。
+    private var smartRecommendSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("智能推荐")
+            HStack(spacing: 12) {
+                heartCard
+                sodaCard
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private var heartCard: some View {
+        smartRecommendTile(
+            source: "网易云",
+            sourceColor: Color(red: 0.76, green: 0.05, blue: 0.05),
+            title: "心动模式",
+            subtitle: heartSubtitle,
+            buttonText: heartSongs.isEmpty ? "去绑定" : "播放",
+            onTap: {
+                if heartSongs.isEmpty { showAccount = true }
+                else { player.playSongs(heartSongs, index: 0) }
+            }
+        )
+    }
+
+    private var sodaCard: some View {
+        let bound = auth.sodaBound
+        let count = auth.sodaRecommend.count
+        let buttonText = bound ? (count > 0 ? "播放" : "准备中…") : "去绑定"
+        let subtitle = bound
+            ? (count > 0 ? "已备好 \(count) 首" : "汽水推荐准备中")
+            : "去个人中心绑定汽水后开启"
+        return smartRecommendTile(
+            source: "汽水",
+            sourceColor: Color(red: 0.06, green: 0.43, blue: 0.34),
+            title: "推荐音乐",
+            subtitle: subtitle,
+            buttonText: buttonText,
+            onTap: {
+                if !bound { showAccount = true }
+                else if count > 0 { player.playSongs(auth.sodaRecommend, index: 0) }
+            }
+        )
+    }
+
+    private var heartSubtitle: String {
+        if heartLoading && heartSongs.isEmpty { return "加载中…" }
+        if heartSongs.isEmpty { return "绑定网易云后开启" }
+        return "已备好 \(heartSongs.count) 首"
+    }
+
+    private func smartRecommendTile(source: String, sourceColor: Color, title: String,
+                                    subtitle: String, buttonText: String,
+                                    onTap: @escaping () -> Void) -> some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(source)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(sourceColor)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                Text(title).font(.system(size: 15, weight: .medium)).foregroundColor(.primary)
+                Text(subtitle).font(.system(size: 11)).foregroundColor(.secondary)
+                    .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                Spacer(minLength: 6)
+                Text(buttonText)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(sourceColor)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(sourceColor, lineWidth: 1))
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, minHeight: 132, alignment: .leading)
+            .background(Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func loadHeart() async {
+        heartLoading = true
+        heartError = nil
+        defer { heartLoading = false; heartChecked = true }
+        do {
+            heartSongs = try await APIClient.ncmHeartbeat()
+        } catch {
+            // 保留上一次成功结果：偶发网络失败不该把整块清空。
+            if heartSongs.isEmpty { heartError = "心动模式加载失败" }
         }
     }
 
