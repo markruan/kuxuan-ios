@@ -15,6 +15,9 @@ final class AuthStore: ObservableObject {
     @Published var ncmBound: Bool = false
     @Published var ncmProfile: NCMProfile?
     @Published var ncmPlaylists: [NCMPlaylist] = []
+    /// 歌单是否已至少完成一次拉取（成功或失败都算结束）。
+    /// 「我的歌单 / 收藏歌单」在首次同步完成前显示骨架，避免先闪一下「还没有歌单」再突然出现列表。
+    @Published var ncmPlaylistsLoaded = false
 
     // 扫码登录状态
     @Published var qrKey: String = ""
@@ -177,6 +180,7 @@ final class AuthStore: ObservableObject {
 
     @MainActor
     func loadNCMPlaylists() async {
+        defer { ncmPlaylistsLoaded = true }
         do { ncmPlaylists = try await APIClient.ncmPlaylists() }
         catch { lastError = "歌单拉取失败：\(error.localizedDescription)" }
     }
@@ -197,6 +201,7 @@ final class AuthStore: ObservableObject {
         ncmBound = false
         ncmProfile = nil
         ncmPlaylists = []
+        ncmPlaylistsLoaded = false
     }
 
     // MARK: - 扫码登录
