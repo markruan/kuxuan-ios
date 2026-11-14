@@ -29,6 +29,8 @@ struct AccountCenterView: View {
     @State private var creating = false
     @State private var confirmUnbind = false
     @State private var loading = false
+    @State private var showSodaBind = false
+    @State private var sodaCookie = ""
     @State private var lastLoadAt: Date = .distantPast
 
     var body: some View {
@@ -42,6 +44,7 @@ struct AccountCenterView: View {
 
                 Section("我的歌单") { playlistSection }
                 Section("网易云账号") { ncmSection }
+                Section("汽水音乐") { sodaSection }
 
                 Section("设置") { settingsSection }
             }
@@ -58,6 +61,9 @@ struct AccountCenterView: View {
             // 回前台做一次轻量刷新，但 20 秒内不重复；RootView 也会核对网易云绑定态。
             .onChange(of: scenePhase) { phase in
                 if phase == .active { Task { await load() } }
+            }
+            .sheet(isPresented: $showSodaBind) {
+                sodaBindSheet
             }
             .sheet(isPresented: $showQR) {
                 NCMQRView().environmentObject(auth)
@@ -274,6 +280,55 @@ struct AccountCenterView: View {
                 }
             }
             Button("取消", role: .cancel) { }
+        }
+    }
+
+    // MARK: 汽水音乐
+    private var sodaSection: some View {
+        Group {
+            HStack(spacing: 10) {
+                KXIcon(icon: auth.sodaBound ? .checkCircle : .person, size: 19, color: .kxAccent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(auth.sodaBound ? "已连接汽水" : "未连接汽水")
+                        .font(.subheadline.bold())
+                    Text(auth.sodaBound ? "已同步歌单与推荐" : "粘贴 Cookie 完成绑定后可听汽水推荐")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+            if !auth.sodaBound {
+                Button { showSodaBind = true } label: {
+                    KXLabel("粘贴 Cookie 绑定汽水", icon: .qr)
+                }
+            } else {
+                Button(role: .destructive) { Task { await auth.unbindSoda() } } label: {
+                    KXLabel("退出汽水账号", icon: .unlink)
+                }
+            }
+        }
+    }
+
+    private var sodaBindSheet: some View {
+        NavigationStack {
+            Form {
+                Section("绑定汽水音乐") {
+                    Text("从汽水音乐官方客户端导出 Cookie（sessionid_ss=…; sid_tt=…）粘贴到下方。仅用于个人测试。")
+                        .font(.caption).foregroundColor(.secondary)
+                    TextField("Cookie", text: $sodaCookie, axis: .vertical)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                Section {
+                    Button {
+                        Task {
+                            let ok = await auth.bindSoda(cookie: sodaCookie)
+                            if ok { showSodaBind = false; sodaCookie = "" }
+                        }
+                    } label: { Text("绑定") }
+                        .disabled(sodaCookie.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .navigationTitle("绑定汽水")
         }
     }
 
