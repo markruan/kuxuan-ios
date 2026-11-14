@@ -211,17 +211,7 @@ struct CommentSheet: View {
     @ViewBuilder
     private func commentRow(_ c: KXComment) -> some View {
         HStack(alignment: .top, spacing: 11) {
-            ZStack {
-                Circle().fill(LinearGradient.kxSoft)
-                if !c.avatar.isEmpty {
-                    KXCachedImage(url: APIClient.proxiedPicURL(c.avatar, size: 80),
-                                  placeholder: nil)
-                        .clipShape(Circle())
-                } else {
-                    KXIcon(icon: .person, size: 18, color: .kxAccent)
-                }
-            }
-            .frame(width: 34, height: 34)
+            KXAvatar(urlString: c.avatar, size: 34)
 
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
