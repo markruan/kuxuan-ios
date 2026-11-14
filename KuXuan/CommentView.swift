@@ -153,8 +153,11 @@ struct CommentSheet: View {
                     Spacer()
                     Button { replyTo = nil } label: {
                         KXIcon(icon: .close, size: 14, color: .secondary)
+                            .contentShape(Rectangle().inset(by: -14))
+                            .accessibilityHidden(true)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("取消回复")
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 6)
@@ -181,8 +184,13 @@ struct CommentSheet: View {
                         KXIcon(icon: .send, size: 20,
                                color: canSend ? .kxAccent : .secondary)
                             .frame(width: 28, height: 28)
+                            .accessibilityHidden(true)
                     }
                 }
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+                .accessibilityLabel("发送评论")
+                .accessibilityHint(canSend ? "双击发送" : "当前无法发送")
                 .buttonStyle(.plain)
                 .disabled(!canSend)
             }
@@ -239,10 +247,12 @@ struct CommentSheet: View {
                         composerFocused = true
                     } label: {
                         KXIcon(icon: .reply, size: 13, color: .secondary)
-                            .frame(width: 26, height: 20)
+                            .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
+                            .accessibilityHidden(true)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("回复 \(c.user)")
                     KXIcon(icon: .thumb, size: 13, color: .secondary)
                     Text(c.likedText).font(.caption2).foregroundColor(.secondary)
                 }
