@@ -68,6 +68,16 @@ struct MiniPlayer: View {
             }
             .frame(width: geo.size.width, height: 10, alignment: .topLeading)
             .contentShape(Rectangle())
+            .accessibilityElement()
+            .accessibilityLabel("播放进度")
+            .accessibilityValue("\(Self.timeText(player.currentTime)) / \(Self.timeText(player.duration))")
+                        .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: player.seek(to: min(player.duration, player.currentTime + 15))
+                case .decrement: player.seek(to: max(0, player.currentTime - 15))
+                @unknown default: break
+                }
+            }
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { v in
@@ -88,46 +98,56 @@ struct MiniPlayer: View {
     private static func fraction(_ x: CGFloat, width: CGFloat) -> CGFloat {
         min(max(x / max(width, 1), 0), 1)
     }
+    private static func timeText(_ s: Double) -> String {
+        let i = max(0, Int(s.isFinite ? s : 0))
+        return "\(i / 60):\(String(format: "%02d", i % 60))"
+    }
 
     // MARK: 控件行
     private var contentRow: some View {
         HStack(spacing: 11) {
             Button { player.showFullPlayer = true } label: {
                 KXCover(url: APIClient.coverURL(player.current?.cover, size: 120))
-                    .frame(width: 42, height: 42)
+                    .frame(width: 44, height: 44)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .shadow(color: .black.opacity(0.13), radius: 4, y: 2)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("打开播放页")
 
             Button { player.showFullPlayer = true } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(player.current?.title ?? "未在播放")
-                        .font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                        .font(KXFont.scaled(15, weight: .semibold)).lineLimit(1)
                     Text(player.current?.artist ?? "—")
-                        .font(.system(size: 12)).foregroundColor(.secondary).lineLimit(1)
+                        .font(KXFont.scaled(12)).foregroundColor(.secondary).lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("打开播放页，当前播放 \(player.current?.title ?? "未在播放")")
 
             Button { player.toggle() } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(KXFont.scaled(18, weight: .bold))
                     .foregroundColor(.primary)
-                    .frame(width: 34, height: 34)
-                    .contentShape(Circle())
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+                    .accessibilityHidden(true)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(player.isPlaying ? "暂停" : "播放")
 
             Button { player.next() } label: {
                 Image(systemName: "forward.fill")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(KXFont.scaled(18, weight: .bold))
                     .foregroundColor(.primary)
-                    .frame(width: 34, height: 34)
-                    .contentShape(Circle())
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+                    .accessibilityHidden(true)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("下一首")
         }
         .padding(.horizontal, 10)
         .padding(.top, 4)
