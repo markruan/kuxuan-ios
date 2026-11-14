@@ -25,6 +25,8 @@ struct CommentSheet: View {
 
     @State private var replyTo: KXComment?
     @State private var sendNotice: String?
+    /// 评论发布成功的轻量确认（与错误提示 sendNotice 分开：错误走 alert，成功走顶部 toast）。
+    @State private var successToast: String?
     /// 分页哨兵按 offset 节流：List 复用会让 onAppear 反复触发，不该每次都新建一个请求 Task。
     @State private var lastSentinelOffset = -1
 
@@ -80,7 +82,8 @@ struct CommentSheet: View {
                                 replyTo: replyTo,
                                 onCancelReply: { replyTo = nil },
                                 onSent: { await load(reset: true) },
-                                sendNotice: $sendNotice)
+                                sendNotice: $sendNotice,
+                                successToast: $successToast)
             }
             .navigationTitle(songTitle.isEmpty ? "评论" : songTitle)
             .navigationBarTitleDisplayMode(.inline)
@@ -98,6 +101,10 @@ struct CommentSheet: View {
                 Button("好", role: .cancel) { }
             } message: {
                 Text(sendNotice ?? "")
+            }
+            .overlay(alignment: .top) {
+                KXSuccessToast(message: $successToast)
+                    .padding(.top, 52)
             }
         }
     }
@@ -255,6 +262,7 @@ private struct CommentComposer: View {
     let onCancelReply: () -> Void
     let onSent: () async -> Void
     @Binding var sendNotice: String?
+    @Binding var successToast: String?
 
     @State private var draft = ""
     @State private var sending = false
@@ -343,7 +351,7 @@ private struct CommentComposer: View {
                                                commentID: replyTo?.id)
             draft = ""
             onCancelReply()
-            sendNotice = nil          // 成功不弹提示，输入框清空 + 列表刷新已是反馈
+            successToast = "评论已发布"   // 成功确认提示（错误才走 alert）
             await onSent()
         } catch {
             sendNotice = "发布失败：\(error.localizedDescription)"
