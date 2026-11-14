@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import QuartzCore
 
 // MARK: - 全屏歌词样式（设置可选，后续可扩展）
 enum LyricsStyle: String, CaseIterable, Identifiable {
@@ -225,6 +226,9 @@ struct WaveLightBackground: View {
     var baseColor: Color
     var brightness: Double = 1
     var speed: Double = 1
+    /// 暂停 / Reduce Motion 时停掉 30fps 全屏 Canvas 重绘，避免无意义的主线程与 GPU 开销。
+    var paused: Bool = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static func rand(_ v: Double, _ salt: Double) -> Double {
         let x = (v + 1) * 127.1 + salt * 311.7
@@ -238,7 +242,8 @@ struct WaveLightBackground: View {
         let rgb = resolveRGB(baseColor)
         let pal = wavePalette(rgb.r, rgb.g, rgb.b)
         let bgGrad = Gradient(colors: [pal.bgMid, pal.bgEdge, pal.bgDeep])
-        return TimelineView(.animation(minimumInterval: 1/30)) { timeline in
+        return TimelineView(.animation(minimumInterval: 1/30,
+                                       paused: paused || reduceMotion)) { timeline in
             Canvas { context, size in
                 let center = CGPoint(x: size.width * 0.5, y: size.height * 0.44)
                 context.fill(Path(CGRect(origin: .zero, size: size)),
@@ -357,6 +362,12 @@ struct FullPlayer: View {
     @State private var showMore = false
 
     private var song: Song? { player.current }
+
+    /// sheet / 队列浮层盖住播放页时，底层 SwiftUI 视图并不会卸载。
+    /// 若不显式停掉旋转，评论页滚动要和底下的旋转动画抢主线程（实测 539 次/9s）。
+    private var isCovered: Bool {
+        showComments || showMore || showFullLyrics || player.showQueue
+    }
 
     private var safeTop: CGFloat {
         UIApplication.shared.connectedScenes
@@ -529,9 +540,9 @@ struct FullPlayer: View {
         ZStack(alignment: .topTrailing) {
             VStack(spacing: 14) {
                 Spacer(minLength: 0)
-                // 旋转状态收在独立子视图里，父级 FullPlayer.body 不再被定时器反复重算
+                // CA 图层动画：主线程零回调；评论/更多等浮层盖住时冻结，避免和列表滚动抢主线程
                 RotatingAlbumCover(url: APIClient.coverURL(song?.cover, size: 720),
-                                   isPlaying: player.isPlaying)
+                                   spinning: player.isPlaying && !isCovered)
                     .frame(maxWidth: .infinity)
                 lyricPreview
                     .frame(height: 48)
@@ -863,7 +874,8 @@ struct FullScreenLyricsView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .top) {
-                WaveLightBackground(baseColor: Color(player.coverColor))
+                WaveLightBackground(baseColor: Color(player.coverColor),
+                                    paused: !player.isPlaying)
                     .frame(width: geo.size.width, height: geo.size.height)
                 shadeLayer(geo.size)
                 lyricsList
@@ -1220,37 +1232,25 @@ struct VinylDiscLyricsView: View {
     // 唱臂已移除；唱片旋转隔离到下方 VinylRotatingDisc 子视图（消除整页重绘抖动）
 
 // MARK: - 黑胶旋转（独立子视图）
-/// 平滑化要点：
-/// 1) 角度按「真实经过时间 dt」累计（accumulated += degPerSec * dt），而非固定步进，
-///    掉帧/定时器漂移时自动补偿，不再忽快忽慢；
-/// 2) 60fps 定时器，与屏幕刷新更接近；
-/// 3) 暂停时冻结角度（last 仍更新，恢复时无跳变）；
-/// 4) 去掉 .compositingGroup()，改由 GPU 直接整层变换，消除逐帧重栅格化的微闪。
+/// 与主封面共用 KXSpinLayer：CA 图层动画，主线程零回调，暂停冻结当前角度。
+/// DiscArt 里的渐变/沟槽只渲染一次，之后由 GPU 整层变换，不再逐帧重建。
 private struct VinylRotatingDisc: View {
     let d: CGFloat
     let coverURL: URL?
     @EnvironmentObject var player: PlayerEngine
     private let rotationSeconds: Double = 4.8          // 一圈约 4.8 秒
-    private var degPerSec: Double { 360 / rotationSeconds }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var accumulated: Double = 0
-    @State private var last: Date = Date()
-    @State private var ticker = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
+    private var active: Bool { player.isPlaying && !reduceMotion }
 
     var body: some View {
-        DiscArt(d: d, coverURL: coverURL)
-            .frame(width: d, height: d)
-            .rotationEffect(.degrees(accumulated))
-            .onReceive(ticker) { now in
-                // 暂停 / Reduce Motion 时直接返回：不写 @State，
-                // 避免 60fps 空转触发整页重算。恢复播放时 dt 限幅，角度不跳变。
-                guard player.isPlaying, !reduceMotion else { return }
-                let dt = min(max(0, now.timeIntervalSince(last)), 0.1)
-                last = now
-                accumulated += degPerSec * dt
-                if accumulated >= 360 { accumulated -= 360 }
-            }
+        KXSpinLayer(seconds: rotationSeconds, active: active,
+                    contentID: coverURL?.absoluteString ?? "none") {
+            DiscArt(d: d, coverURL: coverURL)
+                .frame(width: d, height: d)
+        }
+        .frame(width: d, height: d)
+        .accessibilityLabel("旋转中的黑胶唱片")
     }
 }
 
@@ -1329,7 +1329,7 @@ struct AIDirectorLyricsView: View {
         GeometryReader { geo in
             ZStack(alignment: .top) {
                 Color.black
-                AIBackground(size: geo.size)
+                AIBackground(size: geo.size, paused: !player.isPlaying)
                 centeredLyrics(geo)
                 topBar
             }
@@ -1431,6 +1431,9 @@ struct AIDirectorLyricsView: View {
 // 绘光背景：深蓝黑底 + 左侧镜头光晕/星芒 + 彩虹光束 + 漂浮光尘（加法混合动画）
 struct AIBackground: View {
     let size: CGSize
+    /// 暂停 / Reduce Motion 时停掉 30fps 全屏 Canvas 重绘。
+    var paused: Bool = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     static func rand(_ v: Double, _ s: Double) -> Double {
         let x = (v + 1) * 127.1 + s * 311.7
         let z = sin(x) * 43758.5453
@@ -1445,7 +1448,8 @@ struct AIBackground: View {
                                 .map { $0.opacity(0.12) })
         let shaftGrad = Gradient(colors: [Color(hue: 0.55, saturation: 0.9, brightness: 1).opacity(0.10), .clear])
         let vig = Gradient(colors: [Color.clear, Color.black.opacity(0.55)])
-        return TimelineView(.animation(minimumInterval: 1/30)) { tl in
+        return TimelineView(.animation(minimumInterval: 1/30,
+                                       paused: paused || reduceMotion)) { tl in
             Canvas { ctx, sz in
                 let t = tl.date.timeIntervalSince1970
                 // 基础辉光
@@ -2322,42 +2326,140 @@ struct SongInfoSheet: View {
     }
 }
 
+// MARK: - 旋转动画图层（Core Animation 驱动，主线程零回调）
+/// 旧实现用 `Timer.publish(every: 1/60)` 在主线程写 `@State` 角度，实测 9 秒产生
+/// 539 次回调 + 539 次整棵 SwiftUI body 重算，问题有三：
+///  1) 定时器锁死 60Hz，在 120Hz ProMotion 真机上每隔一帧才更新一次 → 视觉上「一顿一顿」；
+///  2) 主线程 runloop 一旦被列表滚动 / JSON 解析占用，角度补偿就会跳变；
+///  3) 评论 / 更多等 sheet 盖住播放页时底层视图并未卸载，动画继续抢主线程 → 评论页也跟着卡。
+/// 改成 `CALayer` 上的 `CABasicAnimation`：由渲染服务器按屏幕实际刷新率插值（60/120Hz 都平滑），
+/// 不产生任何主线程回调；暂停用 `layer.speed = 0` + `timeOffset` 冻结当前角度，恢复不跳变。
+private final class KXSpinHostView: UIView {
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        for v in subviews { v.frame = bounds }
+    }
+}
+
+private final class KXSpinCoordinator {
+    var host: UIHostingController<AnyView>?
+    var contentID: String = ""
+    private var isActive = false
+    private var seconds: Double = 0
+    private let key = "kx.spin.rotation"
+
+    func installIfNeeded(on layer: CALayer, seconds: Double, active: Bool) {
+        guard layer.animation(forKey: key) == nil || self.seconds != seconds else { return }
+        layer.removeAnimation(forKey: key)
+        self.seconds = seconds
+        let a = CABasicAnimation(keyPath: "transform.rotation.z")
+        a.fromValue = 0
+        a.toValue = Double.pi * 2
+        a.duration = max(0.1, seconds)
+        a.repeatCount = .infinity
+        a.isRemovedOnCompletion = false
+        a.timingFunction = CAMediaTimingFunction(name: .linear)
+        layer.add(a, forKey: key)
+        isActive = true
+        if !active {
+            layer.speed = 0
+            layer.timeOffset = layer.convertTime(CACurrentMediaTime(), from: nil)
+            isActive = false
+        }
+    }
+
+    /// 标准 CA 暂停/恢复写法，保持当前角度而不是回到 0。
+    func setActive(_ active: Bool, on layer: CALayer) {
+        guard active != isActive else { return }
+        isActive = active
+        if active {
+            let paused = layer.timeOffset
+            layer.speed = 1
+            layer.timeOffset = 0
+            layer.beginTime = 0
+            let delta = layer.convertTime(CACurrentMediaTime(), from: nil) - paused
+            layer.beginTime = delta
+        } else {
+            let t = layer.convertTime(CACurrentMediaTime(), from: nil)
+            layer.speed = 0
+            layer.timeOffset = t
+        }
+    }
+}
+
+private struct KXSpinLayer: UIViewRepresentable {
+    let seconds: Double
+    let active: Bool
+    let contentID: String
+    let content: AnyView
+
+    init<Content: View>(seconds: Double, active: Bool, contentID: String,
+                        @ViewBuilder content: () -> Content) {
+        self.seconds = seconds
+        self.active = active
+        self.contentID = contentID
+        self.content = AnyView(content())
+    }
+
+    func makeCoordinator() -> KXSpinCoordinator { KXSpinCoordinator() }
+
+    func makeUIView(context: Context) -> KXSpinHostView {
+        let host = UIHostingController(rootView: content)
+        host.view.backgroundColor = .clear
+        host.view.clipsToBounds = false
+        let v = KXSpinHostView()
+        v.backgroundColor = .clear
+        v.addSubview(host.view)
+        context.coordinator.host = host
+        context.coordinator.contentID = contentID
+        context.coordinator.installIfNeeded(on: host.view.layer, seconds: seconds, active: active)
+        return v
+    }
+
+    func updateUIView(_ uiView: KXSpinHostView, context: Context) {
+        let c = context.coordinator
+        // 只有换歌（封面 URL 变化）才重建 SwiftUI 内容；暂停/恢复不动 rootView，
+        // 因而不会打断图层动画，也不会白白重绘一次封面。
+        if c.contentID != contentID {
+            c.contentID = contentID
+            c.host?.rootView = content
+        }
+        guard let layer = c.host?.view.layer else { return }
+        c.installIfNeeded(on: layer, seconds: seconds, active: active)
+        c.setActive(active, on: layer)
+    }
+
+    static func dismantleUIView(_ uiView: KXSpinHostView, coordinator: KXSpinCoordinator) {
+        coordinator.host?.view.layer.removeAllAnimations()
+    }
+}
+
 // MARK: - 旋转专辑封面（独立子视图）
-/// 平滑化：角度按真实经过时间 dt 累计（accumulated += degPerSec * dt），60fps 定时器；
-/// 暂停时冻结；去掉 .compositingGroup()，由 GPU 直接整层变换，消除逐帧重栅格化的微闪。
+/// 静态装饰圆环留在 SwiftUI 层，只有封面内容进入 CA 旋转图层，避免每帧重建整棵子树。
 private struct RotatingAlbumCover: View {
     let url: URL?
-    let isPlaying: Bool
+    /// 由调用处合并「正在播放」与「没有被 sheet 遮挡」，两者任一为假即冻结。
+    let spinning: Bool
     private let rotationSeconds: Double = 20           // 一圈约 20 秒
-    private var degPerSec: Double { 360 / rotationSeconds }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var accumulated: Double = 0
-    @State private var last: Date = Date()
-    @State private var ticker = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
+    private var active: Bool { spinning && !reduceMotion }
 
     var body: some View {
         ZStack {
             Circle().fill(Color.white.opacity(0.07)).frame(width: 300, height: 300)
-            albumImage
-                .frame(width: 266, height: 266)
-                .rotationEffect(.degrees(accumulated))
+            KXSpinLayer(seconds: rotationSeconds, active: active,
+                        contentID: url?.absoluteString ?? "none") {
+                KXCachedImage(url: url, placeholder: Color.white.opacity(0.12))
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(Color.white.opacity(0.28), lineWidth: 4))
+            }
+            .frame(width: 266, height: 266)
             Circle().stroke(Color.white.opacity(0.16), lineWidth: 1)
                 .frame(width: 286, height: 286)
         }
-        .onReceive(ticker) { now in
-            guard isPlaying, !reduceMotion else { return }
-            let dt = min(max(0, now.timeIntervalSince(last)), 0.1)
-            last = now
-            accumulated += degPerSec * dt
-            if accumulated >= 360 { accumulated -= 360 }
-        }
-    }
-
-    @ViewBuilder
-    private var albumImage: some View {
-        KXCachedImage(url: url, placeholder: Color.white.opacity(0.12))
-            .clipShape(Circle())
-            .overlay(Circle().stroke(Color.white.opacity(0.28), lineWidth: 4))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("专辑封面")
+        .accessibilityHint(active ? "正在旋转" : "已暂停")
     }
 }
