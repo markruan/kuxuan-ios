@@ -27,6 +27,7 @@ struct PlaylistRef: Identifiable, Hashable {
 
 struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject var player: PlayerEngine
     @EnvironmentObject var auth: AuthStore
 
@@ -65,8 +66,9 @@ struct RootView: View {
             .ignoresSafeArea(edges: .bottom)
             // transition 要由父级 animation 驱动；原先把 animation 挂在子视图上，
             // 全屏播放页与迷你条都是硬切出现/消失。
-            .animation(.easeInOut(duration: 0.34), value: player.showFullPlayer)
-            .animation(.easeInOut(duration: 0.28), value: player.queue.isEmpty)
+            // 「减少动态效果」开启时改为无动画切换，避免大面积位移/淡入淡出
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.34), value: player.showFullPlayer)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: player.queue.isEmpty)
             // 歌手页：任意位置点歌手名/头像都会设置 player.artistToShow，这里承接为全屏浮层。
             // 置于 RootView 层级，可覆盖全屏播放器与迷你条，且自身用 NavigationStack 支持相似歌手下钻。
             .fullScreenCover(item: $player.artistToShow) { mini in
