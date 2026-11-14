@@ -181,7 +181,8 @@ struct HomeView: View {
                     if !h.newsongs.isEmpty { newSongSection(h.newsongs) }
                     statusFooter(h)
                 } else if loading {
-                    ProgressView("加载中…").frame(maxWidth: .infinity, alignment: .center).padding(.top, 80)
+                    KXSkeletonList(rows: 3)
+                        .padding(.horizontal, 16).padding(.top, 8)
                 } else if errorMsg != nil {
                     errorView
                 }
@@ -238,8 +239,13 @@ struct HomeView: View {
             HStack(spacing: 8) {
                 Button { openSearch() } label: {
                     KXIcon(icon: .search, size: 17, color: .secondary)
+                        // inset 负值只扩大命中区到 44pt，不改变搜索框行高
+                        .contentShape(Rectangle().inset(by: -12))
+                        .accessibilityHidden(true)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("搜索歌曲或歌手")
+                .accessibilityHint("打开搜索页")
                 TextField("搜索歌曲或歌手", text: $searchText)
                     .focused($searchFocused)
                     .submitLabel(.search)
@@ -247,8 +253,11 @@ struct HomeView: View {
                 if !searchText.isEmpty {
                     Button { searchText = "" } label: {
                         KXIcon(icon: .close, size: 16, color: .secondary)
+                            .contentShape(Rectangle().inset(by: -12))
+                            .accessibilityHidden(true)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("清除搜索内容")
                 }
             }
             .padding(10)
@@ -261,7 +270,7 @@ struct HomeView: View {
                 Button { cancelSearch() } label: {
                     Text("取消").font(.subheadline)
                         .foregroundColor(.kxAccent)
-                        .frame(width: 44, height: 38)
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -270,6 +279,8 @@ struct HomeView: View {
                 Button { showAccount = true } label: {
                     KXIcon(icon: .menu, size: 18, color: .primary)
                         .frame(width: 38, height: 38)
+                        .contentShape(Rectangle().inset(by: -3))
+                        .accessibilityHidden(true)
                         .background(Color(.secondarySystemGroupedBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
                         .overlay(
@@ -278,6 +289,8 @@ struct HomeView: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("个人中心")
+                .accessibilityHint("打开账号、收藏与设置")
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
             }
         }
@@ -454,12 +467,12 @@ struct HomeView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 8)
                         Text(pl.name)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(KXFont.scaled(13, weight: .semibold))
                             .foregroundColor(.primary)
                             .lineLimit(1)
                             .frame(width: cardW)
                         Text(pl.description.isEmpty ? " " : pl.description)
-                            .font(.system(size: 10))
+                            .font(KXFont.scaled(10))
                             .foregroundColor(.secondary)
                             .lineLimit(1)
                             .frame(width: cardW)
@@ -615,7 +628,7 @@ struct HomeView: View {
                 Text(s.title).font(.caption).lineLimit(2)
                     .foregroundColor(.primary)
                     .frame(width: 110, height: 30, alignment: .top)
-                Text(s.artist).font(.system(size: 9))
+                Text(s.artist).font(KXFont.scaled(9))
                     .foregroundColor(.secondary).lineLimit(1)
                     .frame(width: 110, height: 12, alignment: .top)
             }
@@ -743,8 +756,11 @@ struct SearchSheet: View {
                     if !query.isEmpty {
                         Button { query = "" } label: {
                             KXIcon(icon: .close, size: 16, color: .secondary)
+                                .contentShape(Rectangle().inset(by: -12))
+                                .accessibilityHidden(true)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("清除搜索内容")
                     }
                     Button("搜索") { Task { await runSearch() } }
                         .buttonStyle(.borderedProminent)
