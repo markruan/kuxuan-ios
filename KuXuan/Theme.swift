@@ -612,45 +612,358 @@ func KXAnnounce(_ message: String) {
     UIAccessibility.post(notification: .announcement, argument: message)
 }
 
-/// 骨架屏占位：代替全屏转圈 spinner。保留内容的形状与层级，加载完成时不产生突兀的整页跳变，
-/// 并给 VoiceOver 一个明确的「正在加载」元素（而不是一个永远转圈的进度指示器）。
-struct KXSkeletonList: View {
-    var rows: Int = 5
+// MARK: - 骨架屏体系
+// 每个页面用自己的骨架，形状/顺序/尺寸都对齐该页面的真实布局：
+// 加载完成后只发生「灰色块变成内容」，不应该出现整页位置跳动或高度塌陷。
+// 骨架一律钉死为视口宽度并左对齐（横向 ScrollView 除外），不给 VoiceOver 留一堆无意义元素。
+
+/// 骨架基础块。所有骨架共用同一套填充色与圆角，避免各页灰度不一致。
+struct KXSkelBar: View {
+    var w: CGFloat
+    var h: CGFloat
+    var r: CGFloat = 4
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 14) {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(.secondarySystemFill))
-                    .frame(width: 112, height: 112)
-                VStack(alignment: .leading, spacing: 10) {
-                    RoundedRectangle(cornerRadius: 4).fill(Color(.secondarySystemFill))
-                        .frame(width: 150, height: 20)
-                    RoundedRectangle(cornerRadius: 4).fill(Color(.secondarySystemFill))
-                        .frame(width: 100, height: 12)
-                    RoundedRectangle(cornerRadius: 4).fill(Color(.secondarySystemFill))
-                        .frame(width: 120, height: 12)
-                }
-                Spacer()
-            }
-            ForEach(0..<rows, id: \.self) { _ in
-                HStack(spacing: 12) {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color(.secondarySystemFill))
-                        .frame(width: 46, height: 46)
-                    VStack(alignment: .leading, spacing: 6) {
-                        RoundedRectangle(cornerRadius: 4).fill(Color(.secondarySystemFill))
-                            .frame(width: 160, height: 13)
-                        RoundedRectangle(cornerRadius: 4).fill(Color(.secondarySystemFill))
-                            .frame(width: 96, height: 10)
-                    }
-                    Spacer()
-                }
+        RoundedRectangle(cornerRadius: r, style: .continuous)
+            .fill(Color(.secondarySystemFill))
+            .frame(width: w, height: h)
+    }
+}
+
+private struct KXSkeletonChrome: ViewModifier {
+    let label: String
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .redacted(reason: .placeholder)
+            .allowsHitTesting(false)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(label)
+    }
+}
+
+extension View {
+    func kxSkeletonChrome(_ label: String) -> some View {
+        modifier(KXSkeletonChrome(label: label))
+    }
+}
+
+/// 歌手页骨架：大封面 + 名 → 两枚胶囊按钮 → 简介 → 专辑横滑 → 相似歌手横滑 → 热门歌曲。
+/// 旧的通用骨架只有「封面 + 5 行歌曲」，缺 4 个区块，数据回来时整页往下跳一大截。
+struct KXArtistSkeleton: View {
+    private let fill = Color(.secondarySystemFill)
+    private var textW: CGFloat { max(160, UIScreen.main.bounds.width - 32) }
+    private func bar(_ w: CGFloat, _ h: CGFloat, _ r: CGFloat = 4) -> some View {
+        KXSkelBar(w: w, h: h, r: r)
+    }
+    private func head(_ w: CGFloat) -> some View { bar(w, 18, 5) }
+    private func songRow() -> some View {
+        HStack(spacing: 12) {
+            bar(46, 46, 6)
+            VStack(alignment: .leading, spacing: 3) {
+                bar(150, 13); bar(96, 10)
             }
             Spacer(minLength: 0)
         }
-        .redacted(reason: .placeholder)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("正在加载")
+    }
+    private func horizontalRow(cover: CGFloat, radius: CGFloat, count: Int,
+                               gap: CGFloat, circle: Bool) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: gap) {
+                ForEach(0..<count, id: \.self) { _ in
+                    VStack(alignment: .leading, spacing: 5) {
+                        if circle {
+                            Circle().fill(fill).frame(width: cover, height: cover)
+                        } else {
+                            bar(cover, cover, radius)
+                        }
+                        bar(cover * 0.82, 9)
+                    }
+                    .frame(width: cover)
+                }
+            }
+        }
+        .frame(height: cover + 5 + 10)
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 22) {
+                // 头部：112 方形封面 + 歌手名 / 统计（与 ArtistDetailContent.header 一致）
+                HStack(alignment: .top, spacing: 16) {
+                    bar(112, 112, 12)
+                    VStack(alignment: .leading, spacing: 6) {
+                        bar(150, 20, 5)
+                        bar(110, 12)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(height: 112)
+                    Spacer(minLength: 0)
+                }
+                // 收藏 / 播放全部 两枚 44pt 胶囊
+                HStack(spacing: 12) {
+                    Capsule().fill(fill).frame(width: 96, height: 44)
+                    Capsule().fill(fill).frame(width: 110, height: 44)
+                    Spacer(minLength: 0)
+                }
+                // 简介：标题 + 4 行正文 + 「展开全文」
+                VStack(alignment: .leading, spacing: 8) {
+                    head(88)
+                    VStack(alignment: .leading, spacing: 6) {
+                        bar(textW, 11)
+                        bar(textW * 0.94, 11)
+                        bar(textW * 0.98, 11)
+                        bar(textW * 0.62, 11)
+                        bar(60, 12)
+                    }
+                }
+                // 专辑横滑 96pt 方形封面
+                VStack(alignment: .leading, spacing: 10) {
+                    head(48)
+                    horizontalRow(cover: 96, radius: 8, count: 4, gap: 14, circle: false)
+                }
+                // 相似歌手横滑 74pt 圆形头像
+                VStack(alignment: .leading, spacing: 10) {
+                    head(80)
+                    horizontalRow(cover: 74, radius: 0, count: 4, gap: 16, circle: true)
+                }
+                // 热门歌曲
+                VStack(alignment: .leading, spacing: 8) {
+                    head(100)
+                    ForEach(0..<5, id: \.self) { _ in songRow() }
+                }
+                Spacer(minLength: 20)
+            }
+            .padding(.top, 6)
+        }
+        .scrollDisabled(true)
+        .kxSkeletonChrome("正在加载歌手页")
+    }
+}
+
+/// 歌单页骨架：居中 210 大封面 → 居中标题/统计 → 三枚并排按钮 → 分隔线 → 带序号歌曲行。
+/// 旧通用骨架是左对齐 112 小封面，和真实页面形状完全不同。
+struct KXPlaylistSkeleton: View {
+    private let fill = Color(.secondarySystemFill)
+    private func bar(_ w: CGFloat, _ h: CGFloat, _ r: CGFloat = 4) -> some View {
+        KXSkelBar(w: w, h: h, r: r)
+    }
+    private func songRow() -> some View {
+        HStack(spacing: 12) {
+            bar(16, 12).frame(width: 22)
+            bar(46, 46, 6)
+            VStack(alignment: .leading, spacing: 3) {
+                bar(150, 13); bar(96, 10)
+            }
+            Spacer(minLength: 0)
+            Circle().fill(fill).frame(width: 16, height: 16).frame(width: 44)
+        }
+        .padding(.vertical, 7)
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(spacing: 14) {
+                    bar(210, 210, 12).frame(maxWidth: .infinity, alignment: .center)
+                    VStack(spacing: 5) {
+                        bar(160, 22, 5).frame(maxWidth: .infinity, alignment: .center)
+                        bar(120, 12).frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    HStack(spacing: 12) {
+                        ForEach(0..<3, id: \.self) { _ in
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(fill)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .padding(.vertical, 10)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 22)
+
+                Divider().padding(.horizontal, 20)
+                VStack(spacing: 0) {
+                    ForEach(0..<8, id: \.self) { _ in
+                        songRow()
+                        Divider().padding(.leading, 76)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            .padding(.top, 8)
+        }
+        .scrollDisabled(true)
+        .kxSkeletonChrome("正在加载歌单")
+    }
+}
+
+/// 评论页骨架：insetGrouped 分组卡片 + 圆头像 + 名称/时间 + 两行正文 + 点赞行。
+struct KXCommentSkeleton: View {
+    private let fill = Color(.secondarySystemFill)
+    private var textW: CGFloat { max(140, UIScreen.main.bounds.width - 120) }
+    private func bar(_ w: CGFloat, _ h: CGFloat, _ r: CGFloat = 4) -> some View {
+        KXSkelBar(w: w, h: h, r: r)
+    }
+    private func commentRow() -> some View {
+        HStack(alignment: .top, spacing: 11) {
+            Circle().fill(fill).frame(width: 34, height: 34)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    bar(70, 11)
+                    Spacer(minLength: 0)
+                    bar(44, 9)
+                }
+                bar(textW, 11)
+                bar(textW * 0.72, 11)
+                HStack { Spacer(minLength: 0); bar(40, 10) }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+    private func group(_ rows: Int) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(0..<rows, id: \.self) { _ in commentRow() }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
+                bar(72, 13, 4).padding(.leading, 4)
+                group(3)
+                bar(110, 13, 4).padding(.leading, 4)
+                group(5)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+        }
+        .scrollDisabled(true)
+        .kxSkeletonChrome("正在加载评论")
+    }
+}
+
+/// 搜索页骨架：三种 tab 共用行结构，歌手 tab 为圆形头像、歌单 tab 带右侧箭头。
+struct KXSearchSkeleton: View {
+    /// 歌手结果用圆形头像，其余用方形封面
+    var circular: Bool = false
+    /// 歌单结果右侧有 chevron
+    var chevron: Bool = false
+    private let fill = Color(.secondarySystemFill)
+    private func bar(_ w: CGFloat, _ h: CGFloat, _ r: CGFloat = 4) -> some View {
+        KXSkelBar(w: w, h: h, r: r)
+    }
+    private func resultRow() -> some View {
+        HStack(spacing: 12) {
+            if circular {
+                Circle().fill(fill).frame(width: 44, height: 44)
+            } else {
+                bar(44, 44, 6)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                bar(150, 13); bar(chevron ? 130 : 96, 10)
+            }
+            Spacer(minLength: 0)
+            if chevron { bar(8, 12, 2) }
+        }
+        .padding(.vertical, 6)
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(0..<12, id: \.self) { _ in
+                    resultRow()
+                    Divider().padding(.leading, 56)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .scrollDisabled(true)
+        .kxSkeletonChrome("正在加载搜索结果")
+    }
+}
+
+/// 首页「每日推荐」局部骨架：section 标题 + 播放全部胶囊 + 110pt 横向卡片轨道。
+/// 原来只有一个小转圈，加载时整块高度塌陷，数据回来会把下方内容顶下去。
+struct KXDailySkeleton: View {
+    private let fill = Color(.secondarySystemFill)
+    private func bar(_ w: CGFloat, _ h: CGFloat, _ r: CGFloat = 4) -> some View {
+        KXSkelBar(w: w, h: h, r: r)
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                bar(88, 18, 5)
+                Spacer(minLength: 0)
+                Capsule().fill(fill).frame(width: 82, height: 26)
+            }
+            .padding(.horizontal, 16)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(0..<4, id: \.self) { _ in
+                        VStack(alignment: .leading, spacing: 6) {
+                            bar(110, 110, 10)
+                            bar(90, 10)
+                            bar(60, 9)
+                        }
+                        .frame(width: 110)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            .frame(height: 164)
+        }
+        .kxSkeletonChrome("正在加载每日推荐")
+    }
+}
+
+/// 二维码未生成时的占位：白底内一块 210 方形灰块，不转圈、不抖动。
+/// 这里不能套 kxSkeletonChrome（它会把视图撑满宽度并左对齐），否则灰块在 230 白卡里会偏左。
+struct KXQRSkeleton: View {
+    var body: some View {
+        KXSkelBar(w: 210, h: 210, r: 8)
+            .redacted(reason: .placeholder)
+            .allowsHitTesting(false)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("正在生成二维码")
+    }
+}
+
+/// 收藏 / 最近播放等单列列表的骨架（首次云同步期间替代「暂无内容」空态）。
+struct KXListSkeleton: View {
+    var rows: Int = 10
+    var circular: Bool = false
+    private let fill = Color(.secondarySystemFill)
+    private func bar(_ w: CGFloat, _ h: CGFloat, _ r: CGFloat = 4) -> some View {
+        KXSkelBar(w: w, h: h, r: r)
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(0..<rows, id: \.self) { _ in
+                HStack(spacing: 12) {
+                    if circular {
+                        Circle().fill(fill).frame(width: 44, height: 44)
+                    } else {
+                        bar(46, 46, KXRadius.cover)
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        bar(150, 13); bar(96, 10)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 7)
+                Divider().padding(.leading, 58)
+            }
+        }
+        .padding(.horizontal, 16)
+        .kxSkeletonChrome("正在加载列表")
     }
 }
 
