@@ -317,6 +317,11 @@ struct AccountCenterView: View {
                     TextField("Cookie", text: $sodaCookie, axis: .vertical)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                    Button {
+                        if let clip = UIPasteboard.general.string, !clip.isEmpty {
+                            sodaCookie = clip
+                        }
+                    } label: { KXLabel("从剪贴板导入", icon: .clipboard) }
                 }
                 Section {
                     Button {
