@@ -8,11 +8,18 @@ struct QueueSheet: View {
             Color.black.opacity(0.45).ignoresSafeArea()
                 .onTapGesture { player.showQueue = false }
             VStack(spacing: 0) {
+                // 自定义浮层也要有与系统 sheet 一致的关闭路径：指示条下滑 + 遮罩点击 + 完成按钮
+                KXModalGrabber()
+                    .kxModalDismiss(isPresented: Binding<Bool>(
+                        get: { player.showQueue },
+                        set: { player.showQueue = $0 }))
                 HStack {
                     Text("播放列表").font(.headline)
                     Spacer()
                     Button("完成") { player.showQueue = false }
                         .foregroundColor(.kxAccent)
+                        .frame(minHeight: 44)
+                        .accessibilityLabel("关闭播放列表")
                 }
                 .padding(16)
 
@@ -40,6 +47,8 @@ struct QueueSheet: View {
                                     .foregroundColor(i == player.currentIndex ? .kxAccent : .primary)
                                     .padding(10)
                                 }
+                                .accessibilityElement(children: .combine)
+                                .accessibilityLabel("播放第 \(i + 1) 首，\(s.title)，\(s.artist)")
                             }
                         }
                         .padding(.horizontal, 8)
