@@ -9,16 +9,17 @@ enum KXError: Error, LocalizedError {
 }
 
 /// KuXuan 后端全部能力的统一入口。
-/// 后端是云端部署的 server.py（默认 http://47.99.97.84:8765/），
+/// 后端是本地 server.py（默认 http://192.168.10.102:8765/，即本机当前局域网地址），
 /// 账号类接口用 Authorization: Bearer <token>（与 Web 端一致）。
+/// 若电脑 IP 变化或手机在别的网络，请在「设置 → 服务器地址」里改成可达地址。
 struct APIClient {
 
-    // MARK: - 服务器地址（打包内置默认云端地址；历史 UserDefaults 仍可被读取，App 不再提供编辑/展示入口）
+    // MARK: - 服务器地址（打包内置默认本机局域网地址；UserDefaults「kuxuan_server」可覆盖，设置页提供编辑入口）
     static var baseURL: String {
         get {
             let s = UserDefaults.standard.string(forKey: "kuxuan_server")?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return s.isEmpty ? "http://47.99.97.84:8765/" : s
+            return s.isEmpty ? "http://192.168.10.102:8765/" : s
         }
         set {
             var s = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
