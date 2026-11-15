@@ -977,8 +977,9 @@ struct HomeView: View {
     private var sodaCard: some View {
         let bound = auth.sodaBound
         let count = auth.sodaRecommend.count
+        // 已绑定但列表为空：按钮直接显示「去汽水」并允许点进个人中心重绑（AuthStore 无 sodaLoading 字段，不引入不存在的属性）
         let buttonText = bound
-            ? (count > 0 ? "播放" : (auth.sodaLoading ? "加载中…" : "去汽水"))
+            ? (count > 0 ? "播放" : "去汽水")
             : "去绑定"
         let subtitle = bound
             ? (count > 0 ? "已备好 \(count) 首" : "汽水推荐暂无，点此重绑汽水")
