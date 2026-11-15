@@ -956,11 +956,10 @@ struct HomeView: View {
     private var heartCard: some View {
         let bound = auth.ncmBound
         let count = heartSongs.count
-        // 已绑定但列表为空（如私人 FM 暂无数据 / cookie 失效）：按钮改为「去云村」并允许点进去
-        // 重新绑定或刷新，而不是停在「准备中…」死状态（原先 bound+empty 时 onTap 是空操作）。
-        let buttonText = bound
-            ? (count > 0 ? "播放" : (heartLoading ? "加载中…" : "去云村"))
-            : "去绑定"
+        // 已绑定且有歌：直接播放；有绑定但暂为空：重试（重新拉取心跳，可能用每日推荐兜底）；
+        // 未绑定：去个人中心绑定。空态不再塞进个人中心（原先的死出口）。
+        let buttonText = !bound ? "去绑定"
+            : (count > 0 ? "播放" : (heartLoading ? "加载中…" : "重试"))
         return smartRecommendTile(
             source: "云村",
             sourceColor: Color(red: 0.76, green: 0.05, blue: 0.05),
@@ -968,8 +967,9 @@ struct HomeView: View {
             subtitle: heartSubtitle,
             buttonText: buttonText,
             onTap: {
-                if !bound || count == 0 { showAccount = true }
-                else { player.playSongs(heartSongs, index: 0) }
+                if !bound { showAccount = true }
+                else if count > 0 { player.playSongs(heartSongs, index: 0) }
+                else { Task { await loadHeart() } }
             }
         )
     }
@@ -977,12 +977,11 @@ struct HomeView: View {
     private var sodaCard: some View {
         let bound = auth.sodaBound
         let count = auth.sodaRecommend.count
-        // 已绑定但列表为空：按钮直接显示「去汽水」并允许点进个人中心重绑（AuthStore 无 sodaLoading 字段，不引入不存在的属性）
-        let buttonText = bound
-            ? (count > 0 ? "播放" : "去汽水")
-            : "去绑定"
+        // 有歌：直接播放；已绑定暂为空：重试（重新拉取汽水推荐）；
+        // 未绑定：去个人中心绑定。空态不再塞进个人中心。
+        let buttonText = !bound ? "去绑定" : (count > 0 ? "播放" : "重试")
         let subtitle = bound
-            ? (count > 0 ? "已备好 \(count) 首" : "汽水推荐暂无，点此重绑汽水")
+            ? (count > 0 ? "已备好 \(count) 首" : "汽水推荐暂无，点此重试")
             : "去个人中心绑定汽水后开启"
         return smartRecommendTile(
             source: "汽水",
@@ -991,8 +990,9 @@ struct HomeView: View {
             subtitle: subtitle,
             buttonText: buttonText,
             onTap: {
-                if !bound || count == 0 { showAccount = true }
-                else { player.playSongs(auth.sodaRecommend, index: 0) }
+                if !bound { showAccount = true }
+                else if count > 0 { player.playSongs(auth.sodaRecommend, index: 0) }
+                else { Task { await auth.loadSodaRecommend() } }
             }
         )
     }
@@ -1000,7 +1000,7 @@ struct HomeView: View {
     private var heartSubtitle: String {
         if !auth.ncmBound { return "去个人中心绑定云村后开启" }
         if heartLoading && heartSongs.isEmpty { return "加载中…" }
-        if heartSongs.isEmpty { return "心动模式暂无歌曲，点此重新绑定云村" }
+        if heartSongs.isEmpty { return "心动模式暂无歌曲，点此重试" }
         return "已备好 \(heartSongs.count) 首"
     }
 
