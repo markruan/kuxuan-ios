@@ -956,7 +956,11 @@ struct HomeView: View {
     private var heartCard: some View {
         let bound = auth.ncmBound
         let count = heartSongs.count
-        let buttonText = bound ? (count > 0 ? "播放" : "准备中…") : "去绑定"
+        // 已绑定但列表为空（如私人 FM 暂无数据 / cookie 失效）：按钮改为「去云村」并允许点进去
+        // 重新绑定或刷新，而不是停在「准备中…」死状态（原先 bound+empty 时 onTap 是空操作）。
+        let buttonText = bound
+            ? (count > 0 ? "播放" : (heartLoading ? "加载中…" : "去云村"))
+            : "去绑定"
         return smartRecommendTile(
             source: "云村",
             sourceColor: Color(red: 0.76, green: 0.05, blue: 0.05),
@@ -964,8 +968,8 @@ struct HomeView: View {
             subtitle: heartSubtitle,
             buttonText: buttonText,
             onTap: {
-                if !bound { showAccount = true }
-                else if count > 0 { player.playSongs(heartSongs, index: 0) }
+                if !bound || count == 0 { showAccount = true }
+                else { player.playSongs(heartSongs, index: 0) }
             }
         )
     }
@@ -973,9 +977,11 @@ struct HomeView: View {
     private var sodaCard: some View {
         let bound = auth.sodaBound
         let count = auth.sodaRecommend.count
-        let buttonText = bound ? (count > 0 ? "播放" : "准备中…") : "去绑定"
+        let buttonText = bound
+            ? (count > 0 ? "播放" : (auth.sodaLoading ? "加载中…" : "去汽水"))
+            : "去绑定"
         let subtitle = bound
-            ? (count > 0 ? "已备好 \(count) 首" : "汽水推荐准备中")
+            ? (count > 0 ? "已备好 \(count) 首" : "汽水推荐暂无，点此重绑汽水")
             : "去个人中心绑定汽水后开启"
         return smartRecommendTile(
             source: "汽水",
@@ -984,8 +990,8 @@ struct HomeView: View {
             subtitle: subtitle,
             buttonText: buttonText,
             onTap: {
-                if !bound { showAccount = true }
-                else if count > 0 { player.playSongs(auth.sodaRecommend, index: 0) }
+                if !bound || count == 0 { showAccount = true }
+                else { player.playSongs(auth.sodaRecommend, index: 0) }
             }
         )
     }
@@ -993,7 +999,7 @@ struct HomeView: View {
     private var heartSubtitle: String {
         if !auth.ncmBound { return "去个人中心绑定云村后开启" }
         if heartLoading && heartSongs.isEmpty { return "加载中…" }
-        if heartSongs.isEmpty { return "心动模式准备中" }
+        if heartSongs.isEmpty { return "心动模式暂无歌曲，点此重新绑定云村" }
         return "已备好 \(heartSongs.count) 首"
     }
 
