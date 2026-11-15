@@ -7,6 +7,7 @@ struct SettingsView: View {
     @EnvironmentObject var auth: AuthStore
     @State private var status: String = ""
     @State private var quality: String = APIClient.audioQuality
+    @State private var serverURL: String = APIClient.baseURL
     @AppStorage("kuxuan_lyrics_style") private var lyricsStyleRaw: String = LyricsStyle.miSide.rawValue
 
     var body: some View {
@@ -48,6 +49,20 @@ struct SettingsView: View {
             } footer: {
                 Text("切换后仅对下一首生效，正在播放的歌曲保持原连接。VIP / 付费歌曲无论选哪档都只有 128 kbps 试听片段；极高 320 kbps 的流量约为标准档的 2.5 倍。")
                     .font(.caption2)
+            }
+
+            Section("服务器地址") {
+                TextField("http://192.168.10.102:8765/", text: $serverURL)
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+                    .keyboardType(.URL)
+                Button("保存并测试连接") {
+                    APIClient.baseURL = serverURL
+                    Task { await test() }
+                }
+                .tint(.kxAccent)
+                Text("默认连本机局域网，手机与电脑需在同一 WiFi。电脑 IP 变化或在其他网络时，请在此改成可达地址（以 / 结尾）。")
+                    .font(.caption2).foregroundColor(.secondary)
             }
 
             Section("连接状态") {
